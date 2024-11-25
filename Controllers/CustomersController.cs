@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -18,148 +18,122 @@ namespace EWDProject.Controllers
             _context = context;
         }
 
-        // GET: Customers
-        public async Task<IActionResult> Index()
+        // GET: Customers/Login
+        public IActionResult Login()
         {
             if (HttpContext.Session.GetInt32("CustomerId") != null)
             {
-                return RedirectToAction(nameof(CustomersList));
+                return RedirectToAction(nameof(Dashboard));
             }
-            return View("Login");
-        }
-
-        // GET: CustomersList
-        public async Task<IActionResult> CustomersList()
-        {
-            var customers = await _context.Customers.ToListAsync();
-            return View(customers);
-        }
-
-        // GET: Register
-        public IActionResult Register()
-        {
             return View();
         }
 
-        // POST: Register
+        // GET: Customers
+        public IActionResult Index()
+        {
+            if (HttpContext.Session.GetInt32("CustomerId") != null)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+            return RedirectToAction(nameof(Login));
+        }
+
+        // GET: Customers/Dashboard
+        public async Task<IActionResult> Dashboard()
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
+            {
+                return RedirectToAction(nameof(Login));
+            }
+
+            var customer = await _context.Customers
+                .Include(c => c.Orders)
+                .FirstOrDefaultAsync(c => c.CustomerId == customerId);
+
+            if (customer == null)
+            {
+                HttpContext.Session.Clear();
+                return RedirectToAction(nameof(Login));
+            }
+
+            return View(customer);
+        }
+
+        // POST: Customers/Login
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Login(Customer loginModel)
+        {
+            if (string.IsNullOrEmpty(loginModel.Email) || string.IsNullOrEmpty(loginModel.Password))
+            {
+                ModelState.AddModelError("", "Email and password are required");
+                return View(loginModel);
+            }
+
+            var customer = await _context.Customers
+                .FirstOrDefaultAsync(c => c.Email == loginModel.Email &&
+                                        c.Password == loginModel.Password);
+
+            if (customer != null)
+            {
+                HttpContext.Session.SetInt32("CustomerId", customer.CustomerId);
+                HttpContext.Session.SetString("CustomerName", customer.Name);
+                return RedirectToAction(nameof(Dashboard));
+            }
+
+            ModelState.AddModelError("", "Invalid email or password");
+            return View(loginModel);
+        }
+
+        // GET: Customers/Register
+        public IActionResult Register()
+        {
+            if (HttpContext.Session.GetInt32("CustomerId") != null)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+            return View();
+        }
+
+        // POST: Customers/Register
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Register([Bind("Name,Password,Address,Phone,Email")] Customer customer)
         {
             if (ModelState.IsValid)
             {
-                try
+                if (await _context.Customers.AnyAsync(c => c.Email == customer.Email))
                 {
-                    if (await _context.Customers.AnyAsync(c => c.Email == customer.Email))
-                    {
-                        ModelState.AddModelError("Email", "This email is already registered");
-                        return View(customer);
-                    }
-
-                    int nextCustomerId = await _context.Customers
-                        .Select(c => c.CustomerId)
-                        .DefaultIfEmpty()
-                        .MaxAsync() + 1;
-
-                    customer.CustomerId = nextCustomerId;
-                    _context.Add(customer);
-                    await _context.SaveChangesAsync();
-
-                    TempData["SuccessMessage"] = "Registration successful! Please login with your credentials.";
-                    return RedirectToAction(nameof(Index));
+                    ModelState.AddModelError("Email", "This email is already registered");
+                    return View(customer);
                 }
-                catch (Exception ex)
-                {
-                    ModelState.AddModelError("", "An error occurred during registration. Please try again.");
-                }
+
+                int nextCustomerId = await _context.Customers
+                    .Select(c => c.CustomerId)
+                    .DefaultIfEmpty()
+                    .MaxAsync() + 1;
+
+                customer.CustomerId = nextCustomerId;
+                _context.Add(customer);
+                await _context.SaveChangesAsync();
+
+                // Automatically log in the user after registration
+                HttpContext.Session.SetInt32("CustomerId", customer.CustomerId);
+                HttpContext.Session.SetString("CustomerName", customer.Name);
+
+                return RedirectToAction(nameof(Dashboard));
             }
             return View(customer);
-        }
-
-        // POST: Login
-        [HttpPost]
-        public async Task<IActionResult> Login(Customer login)
-        {
-            try
-            {
-                var customer = await _context.Customers
-                    .FirstOrDefaultAsync(c => c.CustomerId == login.CustomerId &&
-                                            c.Password == login.Password);
-
-                if (customer != null)
-                {
-                    HttpContext.Session.SetInt32("CustomerId", customer.CustomerId);
-                    HttpContext.Session.SetString("CustomerName", customer.Name);
-                    return RedirectToAction(nameof(CustomersList));
-                }
-
-                ModelState.AddModelError("", "Invalid login credentials");
-                return View("Login");
-            }
-            catch (Exception ex)
-            {
-                ModelState.AddModelError("", "An error occurred during login");
-                return View("Login");
-            }
         }
 
         // POST: Customers/Logout
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public IActionResult Logout()
         {
             HttpContext.Session.Clear();
-            return RedirectToAction("Index");
-        }
-
-        // GET: Customers/Details/5
-        public async Task<IActionResult> Details(int? id)
-        {
-            if (id == null)
-            {
-                return NotFound();
-            }
-
-            var customer = await _context.Customers
-                .FirstOrDefaultAsync(m => m.CustomerId == id);
-            if (customer == null)
-            {
-                return NotFound();
-            }
-
-            return View(customer);
-        }
-
-        // GET: Customers/Create
-        public IActionResult Create()
-        {
-            return View();
-        }
-
-        // POST: Customers/Create
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("CustomerId,Password,Name,Address,Phone,Email")] Customer customer)
-        {
-            if (ModelState.IsValid)
-            {
-                try
-                {
-                    if (await _context.Customers.AnyAsync(c => c.CustomerId == customer.CustomerId))
-                    {
-                        ModelState.AddModelError("CustomerId", "This Customer ID is already in use");
-                        return View(customer);
-                    }
-
-                    _context.Add(customer);
-                    await _context.SaveChangesAsync();
-                    return RedirectToAction(nameof(CustomersList));
-                }
-                catch (Exception ex)
-                {
-                    ModelState.AddModelError("", "An error occurred while creating the customer.");
-                }
-            }
-            return View(customer);
+            return RedirectToAction(nameof(Login));
         }
 
         // GET: Customers/Edit/5
@@ -170,11 +144,18 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != id)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+
             var customer = await _context.Customers.FindAsync(id);
             if (customer == null)
             {
                 return NotFound();
             }
+
             return View(customer);
         }
 
@@ -183,55 +164,52 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int id, [Bind("CustomerId,Password,Name,Address,Phone,Email")] Customer customer)
         {
+            if (id != customer.CustomerId)
+            {
+                return NotFound();
+            }
+
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != id)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+
             if (ModelState.IsValid)
             {
                 try
                 {
-                    // Load the current state of the customer from the database
                     var existingCustomer = await _context.Customers
                         .AsNoTracking()
-                        .FirstOrDefaultAsync(c => c.CustomerId == id);
+                        .FirstOrDefaultAsync(c => c.Email == customer.Email && c.CustomerId != customer.CustomerId);
 
-                    if (existingCustomer == null)
+                    if (existingCustomer != null)
                     {
-                        return NotFound();
-                    }
-
-                    // Check if the new CustomerId already exists (only if it's different from the current one)
-                    if (customer.CustomerId != id && await _context.Customers.AnyAsync(c => c.CustomerId == customer.CustomerId))
-                    {
-                        ModelState.AddModelError("CustomerId", "This Customer ID is already in use");
+                        ModelState.AddModelError("Email", "This email is already in use");
                         return View(customer);
                     }
 
-                    // Update session if the logged-in user is updating their own ID
-                    if (HttpContext.Session.GetInt32("CustomerId") == id)
-                    {
-                        HttpContext.Session.SetInt32("CustomerId", customer.CustomerId);
-                    }
-
-                    // Update the customer
-                    _context.Entry(customer).State = EntityState.Modified;
+                    _context.Update(customer);
                     await _context.SaveChangesAsync();
 
-                    return RedirectToAction(nameof(CustomersList));
+                    // Update session if name changed
+                    if (HttpContext.Session.GetString("CustomerName") != customer.Name)
+                    {
+                        HttpContext.Session.SetString("CustomerName", customer.Name);
+                    }
+
+                    return RedirectToAction(nameof(Dashboard));
                 }
                 catch (DbUpdateConcurrencyException)
                 {
-                    if (!CustomerExists(id))
+                    if (!CustomerExists(customer.CustomerId))
                     {
                         return NotFound();
                     }
                     else
                     {
-                        // Handle concurrency conflict
-                        ModelState.AddModelError("", "The record has been modified by another user. Please refresh and try again.");
-                        return View(customer);
+                        throw;
                     }
-                }
-                catch (Exception ex)
-                {
-                    ModelState.AddModelError("", "An error occurred while updating the customer.");
                 }
             }
             return View(customer);
@@ -243,6 +221,12 @@ namespace EWDProject.Controllers
             if (id == null)
             {
                 return NotFound();
+            }
+
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != id)
+            {
+                return RedirectToAction(nameof(Dashboard));
             }
 
             var customer = await _context.Customers
@@ -260,28 +244,21 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            try
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != id)
             {
-                var customer = await _context.Customers.FindAsync(id);
-                if (customer != null)
-                {
-                    // Check if the user is trying to delete their own account
-                    if (HttpContext.Session.GetInt32("CustomerId") == id)
-                    {
-                        HttpContext.Session.Clear();
-                    }
-
-                    _context.Customers.Remove(customer);
-                    await _context.SaveChangesAsync();
-                }
-
-                return RedirectToAction(nameof(CustomersList));
+                return RedirectToAction(nameof(Dashboard));
             }
-            catch (Exception ex)
+
+            var customer = await _context.Customers.FindAsync(id);
+            if (customer != null)
             {
-                ModelState.AddModelError("", "An error occurred while deleting the customer.");
-                return View("Delete", await _context.Customers.FindAsync(id));
+                _context.Customers.Remove(customer);
+                await _context.SaveChangesAsync();
+                HttpContext.Session.Clear();
             }
+
+            return RedirectToAction(nameof(Login));
         }
 
         private bool CustomerExists(int id)

@@ -18,6 +18,62 @@ namespace EWDProject.Controllers
             _context = context;
         }
 
+        // GET: Customers/Create
+        public IActionResult Create()
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != 1)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+            return View();
+        }
+
+        // POST: Customers/Create
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create([Bind("Name,Password,Address,Phone,Email")] Customer customer)
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != 1)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+
+            if (ModelState.IsValid)
+            {
+                if (await _context.Customers.AnyAsync(c => c.Email == customer.Email))
+                {
+                    ModelState.AddModelError("Email", "This email is already registered");
+                    return View(customer);
+                }
+
+                int nextCustomerId = await _context.Customers
+                    .Select(c => c.CustomerId)
+                    .DefaultIfEmpty()
+                    .MaxAsync() + 1;
+
+                customer.CustomerId = nextCustomerId;
+                _context.Add(customer);
+                await _context.SaveChangesAsync();
+
+                return RedirectToAction(nameof(CustomersList));
+            }
+            return View(customer);
+        }
+
+        // GET: Customers/CustomersList
+        public async Task<IActionResult> CustomersList()
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != 1)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+
+            return View(await _context.Customers.ToListAsync());
+        }
+
         // GET: Customers/Login
         public IActionResult Login()
         {
@@ -145,7 +201,7 @@ namespace EWDProject.Controllers
             }
 
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != id)
+            if (customerId != id && customerId != 1)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -170,7 +226,7 @@ namespace EWDProject.Controllers
             }
 
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != id)
+            if (customerId != id && customerId != 1)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -192,12 +248,16 @@ namespace EWDProject.Controllers
                     _context.Update(customer);
                     await _context.SaveChangesAsync();
 
-                    // Update session if name changed
-                    if (HttpContext.Session.GetString("CustomerName") != customer.Name)
+                    // Update session if name changed and it's the current user
+                    if (customerId == customer.CustomerId && HttpContext.Session.GetString("CustomerName") != customer.Name)
                     {
                         HttpContext.Session.SetString("CustomerName", customer.Name);
                     }
 
+                    if (customerId == 1)
+                    {
+                        return RedirectToAction(nameof(CustomersList));
+                    }
                     return RedirectToAction(nameof(Dashboard));
                 }
                 catch (DbUpdateConcurrencyException)
@@ -224,7 +284,7 @@ namespace EWDProject.Controllers
             }
 
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != id)
+            if (customerId != id && customerId != 1)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -245,7 +305,7 @@ namespace EWDProject.Controllers
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != id)
+            if (customerId != id && customerId != 1)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -253,12 +313,22 @@ namespace EWDProject.Controllers
             var customer = await _context.Customers.FindAsync(id);
             if (customer != null)
             {
+                if (customer.CustomerId == 1)
+                {
+                    return RedirectToAction(nameof(Dashboard));
+                }
+
                 _context.Customers.Remove(customer);
                 await _context.SaveChangesAsync();
-                HttpContext.Session.Clear();
+
+                if (customerId == id)
+                {
+                    HttpContext.Session.Clear();
+                    return RedirectToAction(nameof(Login));
+                }
             }
 
-            return RedirectToAction(nameof(Login));
+            return RedirectToAction(nameof(CustomersList));
         }
 
         private bool CustomerExists(int id)

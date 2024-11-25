@@ -31,6 +31,12 @@
                             <li class="nav-item">
                                 <a class="nav-link text-dark" asp-controller="Orders" asp-action="Create">New Order</a>
                             </li>
+                            @if (Context.Session.GetInt32("CustomerId") == 1)
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link text-dark" asp-controller="Customers" asp-action="CustomersList">Manage Customers</a>
+                                </li>
+                            }
                         }
                     </ul>
                     @if (Context.Session.GetInt32("CustomerId") != null)

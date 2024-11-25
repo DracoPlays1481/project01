@@ -23,7 +23,7 @@ namespace EWDProject.Controllers
             var customerId = HttpContext.Session.GetInt32("CustomerId");
             if (customerId == null)
             {
-                return RedirectToAction("Index", "Customers");
+                return RedirectToAction("Login", "Customers");
             }
 
             var orders = await _context.Orders
@@ -42,62 +42,76 @@ namespace EWDProject.Controllers
             var customerId = HttpContext.Session.GetInt32("CustomerId");
             if (customerId == null)
             {
-                return RedirectToAction("Index", "Customers");
+                return RedirectToAction("Login", "Customers");
             }
 
             ViewBag.Books = _context.Books.ToList();
             return View(new Order { CustomerId = customerId.Value });
         }
 
+        public class OrderItemViewModel
+        {
+            public int BookId { get; set; }
+            public int Quantity { get; set; }
+        }
+
         // POST: Orders/Create
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create(Order order, string action, List<Orderitem> orderItems)
+        public async Task<IActionResult> Create(string action, List<OrderItemViewModel> orderItems)
         {
-            if (ModelState.IsValid)
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
             {
-                var customerId = HttpContext.Session.GetInt32("CustomerId");
-                if (customerId == null)
-                {
-                    return RedirectToAction("Index", "Customers");
-                }
+                return RedirectToAction("Login", "Customers");
+            }
 
-                order.CustomerId = customerId.Value;
-                order.OrderDate = DateTime.Now;
-                order.OrderStatus = action == "Save" ? "Saved" : "Confirmed";
+            if (orderItems == null || !orderItems.Any(i => i.Quantity > 0))
+            {
+                ModelState.AddModelError("", "Please select at least one book");
+                ViewBag.Books = _context.Books.ToList();
+                return View(new Order { CustomerId = customerId.Value });
+            }
 
-                // Get the next available OrderId
-                int nextOrderId = await _context.Orders
-                    .Select(o => o.OrderId)
+            var order = new Order
+            {
+                CustomerId = customerId.Value,
+                OrderDate = DateTime.Now,
+                OrderStatus = action == "Save" ? "Saved" : "Confirmed"
+            };
+
+            // Get the next available OrderId
+            int nextOrderId = await _context.Orders
+                .Select(o => o.OrderId)
+                .DefaultIfEmpty()
+                .MaxAsync() + 1;
+
+            order.OrderId = nextOrderId;
+
+            _context.Orders.Add(order);
+            await _context.SaveChangesAsync();
+
+            foreach (var item in orderItems.Where(i => i.Quantity > 0))
+            {
+                // Get the next available OrderItemId
+                int nextOrderItemId = await _context.Orderitems
+                    .Select(oi => oi.OrderItemId)
                     .DefaultIfEmpty()
                     .MaxAsync() + 1;
 
-                order.OrderId = nextOrderId;
-
-                _context.Add(order);
-                await _context.SaveChangesAsync();
-
-                foreach (var item in orderItems)
+                var orderItem = new Orderitem
                 {
-                    if (item.Quantity > 0)
-                    {
-                        // Get the next available OrderItemId
-                        int nextOrderItemId = await _context.Orderitems
-                            .Select(oi => oi.OrderItemId)
-                            .DefaultIfEmpty()
-                            .MaxAsync() + 1;
+                    OrderItemId = nextOrderItemId,
+                    OrderId = order.OrderId,
+                    BookId = item.BookId,
+                    Quantity = item.Quantity
+                };
 
-                        item.OrderItemId = nextOrderItemId;
-                        item.OrderId = order.OrderId;
-                        _context.Orderitems.Add(item);
-                    }
-                }
-
-                await _context.SaveChangesAsync();
-                return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                _context.Orderitems.Add(orderItem);
             }
-            ViewBag.Books = _context.Books.ToList();
-            return View(order);
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Details), new { id = order.OrderId });
         }
 
         // GET: Orders/Details/5
@@ -111,7 +125,7 @@ namespace EWDProject.Controllers
             var customerId = HttpContext.Session.GetInt32("CustomerId");
             if (customerId == null)
             {
-                return RedirectToAction("Index", "Customers");
+                return RedirectToAction("Login", "Customers");
             }
 
             var order = await _context.Orders
@@ -138,7 +152,7 @@ namespace EWDProject.Controllers
             var customerId = HttpContext.Session.GetInt32("CustomerId");
             if (customerId == null)
             {
-                return RedirectToAction("Index", "Customers");
+                return RedirectToAction("Login", "Customers");
             }
 
             var order = await _context.Orders
@@ -158,69 +172,55 @@ namespace EWDProject.Controllers
         // POST: Orders/Edit/5
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, Order order, List<Orderitem> orderItems)
+        public async Task<IActionResult> Edit(int id, List<OrderItemViewModel> orderItems)
         {
-            if (id != order.OrderId)
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
+            {
+                return RedirectToAction("Login", "Customers");
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.Orderitems)
+                .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
+
+            if (order == null || order.OrderStatus != "Saved")
             {
                 return NotFound();
             }
 
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null || customerId != order.CustomerId)
+            if (orderItems == null || !orderItems.Any(i => i.Quantity > 0))
             {
-                return RedirectToAction("Index", "Customers");
+                ModelState.AddModelError("", "Please select at least one book");
+                ViewBag.Books = _context.Books.ToList();
+                return View(order);
             }
 
-            if (ModelState.IsValid)
+            // Remove existing order items
+            _context.Orderitems.RemoveRange(order.Orderitems);
+
+            // Add new order items
+            foreach (var item in orderItems.Where(i => i.Quantity > 0))
             {
-                try
+                // Get the next available OrderItemId
+                int nextOrderItemId = await _context.Orderitems
+                    .Select(oi => oi.OrderItemId)
+                    .DefaultIfEmpty()
+                    .MaxAsync() + 1;
+
+                var orderItem = new Orderitem
                 {
-                    var existingOrder = await _context.Orders
-                        .Include(o => o.Orderitems)
-                        .FirstOrDefaultAsync(o => o.OrderId == id);
+                    OrderItemId = nextOrderItemId,
+                    OrderId = order.OrderId,
+                    BookId = item.BookId,
+                    Quantity = item.Quantity
+                };
 
-                    if (existingOrder == null || existingOrder.OrderStatus != "Saved")
-                    {
-                        return NotFound();
-                    }
-
-                    // Remove existing order items
-                    _context.Orderitems.RemoveRange(existingOrder.Orderitems);
-
-                    // Add new order items
-                    foreach (var item in orderItems)
-                    {
-                        if (item.Quantity > 0)
-                        {
-                            // Get the next available OrderItemId
-                            int nextOrderItemId = await _context.Orderitems
-                                .Select(oi => oi.OrderItemId)
-                                .DefaultIfEmpty()
-                                .MaxAsync() + 1;
-
-                            item.OrderItemId = nextOrderItemId;
-                            item.OrderId = order.OrderId;
-                            _context.Orderitems.Add(item);
-                        }
-                    }
-
-                    await _context.SaveChangesAsync();
-                    return RedirectToAction(nameof(Details), new { id = order.OrderId });
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    if (!OrderExists(order.OrderId))
-                    {
-                        return NotFound();
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
+                _context.Orderitems.Add(orderItem);
             }
-            ViewBag.Books = _context.Books.ToList();
-            return View(order);
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Details), new { id = order.OrderId });
         }
 
         // GET: Orders/Delete/5
@@ -234,7 +234,7 @@ namespace EWDProject.Controllers
             var customerId = HttpContext.Session.GetInt32("CustomerId");
             if (customerId == null)
             {
-                return RedirectToAction("Index", "Customers");
+                return RedirectToAction("Login", "Customers");
             }
 
             var order = await _context.Orders
@@ -258,7 +258,7 @@ namespace EWDProject.Controllers
             var customerId = HttpContext.Session.GetInt32("CustomerId");
             if (customerId == null)
             {
-                return RedirectToAction("Index", "Customers");
+                return RedirectToAction("Login", "Customers");
             }
 
             var order = await _context.Orders

@@ -1,46 +1,55 @@
-﻿@model EWDProject.Models.Orderitem
+﻿@model EWDProject.Models.Order
 
 @{
-    ViewData["Title"] = "Create";
+    ViewData["Title"] = "Create Order";
+    var books = ViewBag.Books as List<EWDProject.Models.Book>;
 }
 
-<h1>Create</h1>
+<div class="container mt-4">
+    <h2>Create New Order</h2>
 
-<h4>Orderitem</h4>
-<hr />
-<div class="row">
-    <div class="col-md-4">
-        <form asp-action="Create">
-            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-            <div class="form-group">
-                <label asp-for="OrderItemId" class="control-label"></label>
-                <input asp-for="OrderItemId" class="form-control" />
-                <span asp-validation-for="OrderItemId" class="text-danger"></span>
-            </div>
-            <div class="form-group">
-                <label asp-for="OrderId" class="control-label"></label>
-                <select asp-for="OrderId" class ="form-control" asp-items="ViewBag.OrderId"></select>
-            </div>
-            <div class="form-group">
-                <label asp-for="BookId" class="control-label"></label>
-                <select asp-for="BookId" class ="form-control" asp-items="ViewBag.BookId"></select>
-            </div>
-            <div class="form-group">
-                <label asp-for="Quantity" class="control-label"></label>
-                <input asp-for="Quantity" class="form-control" />
-                <span asp-validation-for="Quantity" class="text-danger"></span>
-            </div>
-            <div class="form-group">
-                <input type="submit" value="Create" class="btn btn-primary" />
-            </div>
-        </form>
-    </div>
-</div>
+    <form asp-action="Create" method="post">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
 
-<div>
-    <a asp-action="Index">Back to List</a>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Author</th>
+                        <th>Price</th>
+                        <th>Stock</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < books.Count; i++)
+                    {
+                        <tr>
+                            <td>@books[i].Title</td>
+                            <td>@books[i].Author</td>
+                            <td>@books[i].Price.ToString("C")</td>
+                            <td>@books[i].Stock</td>
+                            <td>
+                                <input type="hidden" name="orderItems[@i].BookId" value="@books[i].BookId" />
+                                <input type="number" name="orderItems[@i].Quantity" class="form-control" min="0" max="@books[i].Stock" value="0" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="form-group mt-3">
+            <button type="submit" name="action" value="Save" class="btn btn-primary">Save Order</button>
+            <button type="submit" name="action" value="Confirm" class="btn btn-success">Confirm Order</button>
+            <a asp-action="History" class="btn btn-secondary">Back to List</a>
+        </div>
+    </form>
 </div>
 
 @section Scripts {
-    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
 }

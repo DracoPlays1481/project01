@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using EWDProject.Models;
 
@@ -18,22 +17,91 @@ namespace EWDProject.Controllers
             _context = context;
         }
 
-        // POST: Customers/DeleteAccount
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> DeleteAccount(int id)
+        // GET: Customers/CustomersList
+        public async Task<IActionResult> CustomersList()
         {
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null || customerId != id)
+            if (customerId != 1)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+
+            return View(await _context.Customers.ToListAsync());
+        }
+
+        // GET: Customers/Dashboard
+        public async Task<IActionResult> Dashboard()
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
             {
                 return RedirectToAction(nameof(Login));
+            }
+
+            var customer = await _context.Customers
+                .Include(c => c.Orders)
+                .FirstOrDefaultAsync(c => c.CustomerId == customerId);
+
+            if (customer == null)
+            {
+                HttpContext.Session.Clear();
+                return RedirectToAction(nameof(Login));
+            }
+
+            return View(customer);
+        }
+
+        // GET: Customers/Delete/5
+        public async Task<IActionResult> Delete(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != 1) // Only admin can delete customers
+            {
+                return RedirectToAction(nameof(Dashboard));
             }
 
             // Prevent deletion of admin account
             if (id == 1)
             {
                 TempData["ErrorMessage"] = "The admin account cannot be deleted.";
+                return RedirectToAction(nameof(CustomersList));
+            }
+
+            var customer = await _context.Customers
+                .Include(c => c.Orders)
+                    .ThenInclude(o => o.Orderitems)
+                        .ThenInclude(oi => oi.Book)
+                .FirstOrDefaultAsync(c => c.CustomerId == id);
+
+            if (customer == null)
+            {
+                return NotFound();
+            }
+
+            return View(customer);
+        }
+
+        // POST: Customers/Delete/5
+        [HttpPost, ActionName("Delete")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteConfirmed(int id)
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != 1) // Only admin can delete customers
+            {
                 return RedirectToAction(nameof(Dashboard));
+            }
+
+            // Prevent deletion of admin account
+            if (id == 1)
+            {
+                TempData["ErrorMessage"] = "The admin account cannot be deleted.";
+                return RedirectToAction(nameof(CustomersList));
             }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
@@ -42,38 +110,54 @@ namespace EWDProject.Controllers
                 {
                     var customer = await _context.Customers
                         .Include(c => c.Orders)
-                        .ThenInclude(o => o.Orderitems)
+                            .ThenInclude(o => o.Orderitems)
+                                .ThenInclude(oi => oi.Book)
                         .FirstOrDefaultAsync(c => c.CustomerId == id);
 
-                    if (customer != null)
+                    if (customer == null)
                     {
-                        // Delete all order items for each order
-                        foreach (var order in customer.Orders)
+                        return NotFound();
+                    }
+
+                    // Process each order
+                    foreach (var order in customer.Orders)
+                    {
+                        // For confirmed orders, restore the book stock
+                        if (order.OrderStatus == "Confirmed")
                         {
-                            _context.Orderitems.RemoveRange(order.Orderitems);
+                            foreach (var item in order.Orderitems)
+                            {
+                                if (item.Book != null)
+                                {
+                                    item.Book.Stock += item.Quantity;
+                                    _context.Update(item.Book);
+                                }
+                            }
                         }
 
-                        // Delete all orders
-                        _context.Orders.RemoveRange(customer.Orders);
-
-                        // Delete the customer
-                        _context.Customers.Remove(customer);
-                        await _context.SaveChangesAsync();
-                        await transaction.CommitAsync();
-
-                        // Clear the session
-                        HttpContext.Session.Clear();
-                        return RedirectToAction(nameof(Login));
+                        // Remove order items
+                        _context.Orderitems.RemoveRange(order.Orderitems);
                     }
+
+                    // Remove orders
+                    _context.Orders.RemoveRange(customer.Orders);
+
+                    // Remove customer
+                    _context.Customers.Remove(customer);
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    TempData["SuccessMessage"] = "Customer deleted successfully.";
+                    return RedirectToAction(nameof(CustomersList));
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     await transaction.RollbackAsync();
-                    TempData["ErrorMessage"] = "An error occurred while deleting your account. Please try again.";
+                    TempData["ErrorMessage"] = $"Error deleting customer: {ex.Message}";
+                    return RedirectToAction(nameof(CustomersList));
                 }
             }
-
-            return RedirectToAction(nameof(Dashboard));
         }
 
         // GET: Customers/Create
@@ -120,18 +204,6 @@ namespace EWDProject.Controllers
             return View(customer);
         }
 
-        // GET: Customers/CustomersList
-        public async Task<IActionResult> CustomersList()
-        {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != 1)
-            {
-                return RedirectToAction(nameof(Dashboard));
-            }
-
-            return View(await _context.Customers.ToListAsync());
-        }
-
         // GET: Customers/Login
         public IActionResult Login()
         {
@@ -140,38 +212,6 @@ namespace EWDProject.Controllers
                 return RedirectToAction(nameof(Dashboard));
             }
             return View();
-        }
-
-        // GET: Customers
-        public IActionResult Index()
-        {
-            if (HttpContext.Session.GetInt32("CustomerId") != null)
-            {
-                return RedirectToAction(nameof(Dashboard));
-            }
-            return RedirectToAction(nameof(Login));
-        }
-
-        // GET: Customers/Dashboard
-        public async Task<IActionResult> Dashboard()
-        {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null)
-            {
-                return RedirectToAction(nameof(Login));
-            }
-
-            var customer = await _context.Customers
-                .Include(c => c.Orders)
-                .FirstOrDefaultAsync(c => c.CustomerId == customerId);
-
-            if (customer == null)
-            {
-                HttpContext.Session.Clear();
-                return RedirectToAction(nameof(Login));
-            }
-
-            return View(customer);
         }
 
         // POST: Customers/Login
@@ -331,6 +371,74 @@ namespace EWDProject.Controllers
                 }
             }
             return View(customer);
+        }
+
+        // GET: Customers
+        public IActionResult Index()
+        {
+            if (HttpContext.Session.GetInt32("CustomerId") != null)
+            {
+                return RedirectToAction(nameof(Dashboard));
+            }
+            return RedirectToAction(nameof(Login));
+        }
+
+        // POST: Customers/DeleteAccount
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteAccount(int id)
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null || customerId != id)
+            {
+                return RedirectToAction(nameof(Login));
+            }
+
+            // Prevent deletion of admin account
+            if (id == 1)
+            {
+                TempData["ErrorMessage"] = "The admin account cannot be deleted.";
+                return RedirectToAction(nameof(Dashboard));
+            }
+
+            using (var transaction = await _context.Database.BeginTransactionAsync())
+            {
+                try
+                {
+                    var customer = await _context.Customers
+                        .Include(c => c.Orders)
+                            .ThenInclude(o => o.Orderitems)
+                        .FirstOrDefaultAsync(c => c.CustomerId == id);
+
+                    if (customer != null)
+                    {
+                        // Delete all order items for each order
+                        foreach (var order in customer.Orders)
+                        {
+                            _context.Orderitems.RemoveRange(order.Orderitems);
+                        }
+
+                        // Delete all orders
+                        _context.Orders.RemoveRange(customer.Orders);
+
+                        // Delete the customer
+                        _context.Customers.Remove(customer);
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+
+                        // Clear the session
+                        HttpContext.Session.Clear();
+                        return RedirectToAction(nameof(Login));
+                    }
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    TempData["ErrorMessage"] = "An error occurred while deleting your account. Please try again.";
+                }
+            }
+
+            return RedirectToAction(nameof(Dashboard));
         }
 
         private bool CustomerExists(int id)

@@ -22,72 +22,6 @@ namespace EWDProject.Controllers
             return HttpContext.Session.GetInt32("CustomerId") == 1;
         }
 
-        // POST: Orders/ConfirmOrder/5
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ConfirmOrder(int id)
-        {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null)
-            {
-                return RedirectToAction("Login", "Customers");
-            }
-
-            using (var transaction = await _context.Database.BeginTransactionAsync())
-            {
-                try
-                {
-                    var order = await _context.Orders
-                        .Include(o => o.Orderitems)
-                            .ThenInclude(oi => oi.Book)
-                        .FirstOrDefaultAsync(o => o.OrderId == id &&
-                            (o.CustomerId == customerId));
-
-                    if (order == null)
-                    {
-                        return NotFound();
-                    }
-
-                    if (order.OrderStatus != "Saved")
-                    {
-                        TempData["ErrorMessage"] = "Only saved orders can be confirmed.";
-                        return RedirectToAction(nameof(Details), new { id = order.OrderId });
-                    }
-
-                    // Check stock and update
-                    foreach (var item in order.Orderitems)
-                    {
-                        if (item.Book == null || item.Quantity > item.Book.Stock)
-                        {
-                            throw new InvalidOperationException($"Insufficient stock for book: {item.Book?.Title ?? "Unknown"}");
-                        }
-
-                        item.Book.Stock -= item.Quantity;
-                        _context.Update(item.Book);
-                    }
-
-                    order.OrderStatus = "Confirmed";
-                    _context.Update(order);
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
-
-                    TempData["SuccessMessage"] = "Order confirmed successfully.";
-                    return RedirectToAction(nameof(Details), new { id = order.OrderId });
-                }
-                catch (InvalidOperationException ex)
-                {
-                    await transaction.RollbackAsync();
-                    TempData["ErrorMessage"] = ex.Message;
-                    return RedirectToAction(nameof(Details), new { id = id });
-                }
-                catch (Exception)
-                {
-                    await transaction.RollbackAsync();
-                    throw;
-                }
-            }
-        }
-
         // GET: Orders/History
         public async Task<IActionResult> History()
         {
@@ -108,6 +42,35 @@ namespace EWDProject.Controllers
                 : await query.Where(o => o.CustomerId == customerId).ToListAsync();
 
             return View(orders);
+        }
+
+        // GET: Orders/Details/5
+        public async Task<IActionResult> Details(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
+            {
+                return RedirectToAction("Login", "Customers");
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Orderitems)
+                    .ThenInclude(oi => oi.Book)
+                .FirstOrDefaultAsync(m => m.OrderId == id &&
+                    (IsAdmin() || m.CustomerId == customerId));
+
+            if (order == null)
+            {
+                return NotFound();
+            }
+
+            return View(order);
         }
 
         // GET: Orders/Create
@@ -212,33 +175,70 @@ namespace EWDProject.Controllers
             }
         }
 
-        // GET: Orders/Details/5
-        public async Task<IActionResult> Details(int? id)
+        // POST: Orders/ConfirmOrder/5
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ConfirmOrder(int id)
         {
-            if (id == null)
-            {
-                return NotFound();
-            }
-
             var customerId = HttpContext.Session.GetInt32("CustomerId");
             if (customerId == null)
             {
                 return RedirectToAction("Login", "Customers");
             }
 
-            var order = await _context.Orders
-                .Include(o => o.Customer)
-                .Include(o => o.Orderitems)
-                    .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id &&
-                    (IsAdmin() || m.CustomerId == customerId));
-
-            if (order == null)
+            using (var transaction = await _context.Database.BeginTransactionAsync())
             {
-                return NotFound();
-            }
+                try
+                {
+                    var order = await _context.Orders
+                        .Include(o => o.Orderitems)
+                            .ThenInclude(oi => oi.Book)
+                        .FirstOrDefaultAsync(o => o.OrderId == id &&
+                            (IsAdmin() || o.CustomerId == customerId));
 
-            return View(order);
+                    if (order == null)
+                    {
+                        return NotFound();
+                    }
+
+                    if (order.OrderStatus != "Saved")
+                    {
+                        TempData["ErrorMessage"] = "Only saved orders can be confirmed.";
+                        return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                    }
+
+                    // Check stock and update
+                    foreach (var item in order.Orderitems)
+                    {
+                        if (item.Book == null || item.Quantity > item.Book.Stock)
+                        {
+                            throw new InvalidOperationException($"Insufficient stock for book: {item.Book?.Title ?? "Unknown"}");
+                        }
+
+                        item.Book.Stock -= item.Quantity;
+                        _context.Update(item.Book);
+                    }
+
+                    order.OrderStatus = "Confirmed";
+                    _context.Update(order);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    TempData["SuccessMessage"] = "Order confirmed successfully.";
+                    return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                }
+                catch (InvalidOperationException ex)
+                {
+                    await transaction.RollbackAsync();
+                    TempData["ErrorMessage"] = ex.Message;
+                    return RedirectToAction(nameof(Details), new { id = id });
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            }
         }
 
         // GET: Orders/Edit/5
@@ -317,11 +317,13 @@ namespace EWDProject.Controllers
                         }
                     }
 
+                    // Remove existing order items
                     _context.Orderitems.RemoveRange(order.Orderitems);
                     await _context.SaveChangesAsync();
 
                     int nextOrderItemId = (await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0) + 1;
 
+                    // Add new order items
                     foreach (var item in orderItems.Where(i => i.Quantity > 0))
                     {
                         var book = await _context.Books.FindAsync(item.BookId);

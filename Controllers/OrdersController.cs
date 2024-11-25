@@ -26,16 +26,116 @@ namespace EWDProject.Controllers
                 return RedirectToAction("Login", "Customers");
             }
 
-            // Explicitly include all required related data
-            var orders = await _context.Orders
+            IQueryable<Order> ordersQuery = _context.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Orderitems)
+                    .ThenInclude(oi => oi.Book);
+
+            // If not admin, filter by customer
+            if (customerId != 1)
+            {
+                ordersQuery = ordersQuery.Where(o => o.CustomerId == customerId);
+            }
+
+            // Apply ordering after all filters
+            var orders = await ordersQuery.OrderByDescending(o => o.OrderDate).ToListAsync();
+            ViewBag.IsAdmin = customerId == 1;
+
+            return View(orders);
+        }
+
+        // GET: Orders/Details/5
+        public async Task<IActionResult> Details(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
+            {
+                return RedirectToAction("Login", "Customers");
+            }
+
+            var order = await _context.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .Where(o => o.CustomerId == customerId)
-                .OrderByDescending(o => o.OrderDate)
-                .ToListAsync();
+                .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
 
-            return View(orders);
+            if (order == null)
+            {
+                return NotFound();
+            }
+
+            ViewBag.IsAdmin = customerId == 1;
+            return View(order);
+        }
+
+        // POST: Orders/ConfirmOrder/5
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ConfirmOrder(int id)
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
+            {
+                return RedirectToAction("Login", "Customers");
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.Orderitems)
+                    .ThenInclude(oi => oi.Book)
+                .FirstOrDefaultAsync(o => o.OrderId == id && (customerId == 1 || o.CustomerId == customerId));
+
+            if (order == null)
+            {
+                return NotFound();
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "This order has already been confirmed.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
+            }
+
+            using (var transaction = await _context.Database.BeginTransactionAsync())
+            {
+                try
+                {
+                    // Check stock availability for all items
+                    foreach (var item in order.Orderitems)
+                    {
+                        if (item.Quantity > item.Book.Stock)
+                        {
+                            TempData["ErrorMessage"] = $"Not enough stock available for {item.Book.Title}";
+                            return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                        }
+                    }
+
+                    // Update stock and confirm order
+                    foreach (var item in order.Orderitems)
+                    {
+                        item.Book.Stock -= item.Quantity;
+                        _context.Update(item.Book);
+                    }
+
+                    order.OrderStatus = "Confirmed";
+                    _context.Update(order);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    TempData["SuccessMessage"] = "Order confirmed successfully.";
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    TempData["ErrorMessage"] = "An error occurred while confirming the order.";
+                }
+            }
+
+            return RedirectToAction(nameof(Details), new { id = order.OrderId });
         }
 
         // GET: Orders/Create
@@ -123,34 +223,6 @@ namespace EWDProject.Controllers
             }
         }
 
-        // GET: Orders/Details/5
-        public async Task<IActionResult> Details(int? id)
-        {
-            if (id == null)
-            {
-                return NotFound();
-            }
-
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null)
-            {
-                return RedirectToAction("Login", "Customers");
-            }
-
-            var order = await _context.Orders
-                .Include(o => o.Customer)
-                .Include(o => o.Orderitems)
-                    .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
-
-            if (order == null)
-            {
-                return NotFound();
-            }
-
-            return View(order);
-        }
-
         // GET: Orders/Edit/5
         public async Task<IActionResult> Edit(int? id)
         {
@@ -169,7 +241,7 @@ namespace EWDProject.Controllers
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
+                .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
 
             if (order == null)
             {
@@ -199,7 +271,7 @@ namespace EWDProject.Controllers
 
             var order = await _context.Orders
                 .Include(o => o.Orderitems)
-                .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
+                .FirstOrDefaultAsync(o => o.OrderId == id && (customerId == 1 || o.CustomerId == customerId));
 
             if (order == null)
             {
@@ -275,7 +347,7 @@ namespace EWDProject.Controllers
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
+                .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
 
             if (order == null)
             {
@@ -308,7 +380,7 @@ namespace EWDProject.Controllers
                 {
                     var order = await _context.Orders
                         .Include(o => o.Orderitems)
-                        .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
+                        .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
 
                     if (order == null)
                     {

@@ -26,9 +26,11 @@ namespace EWDProject.Controllers
                 return RedirectToAction("Login", "Customers");
             }
 
+            // Explicitly include all required related data
             var orders = await _context.Orders
+                .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
-                .ThenInclude(oi => oi.Book)
+                    .ThenInclude(oi => oi.Book)
                 .Where(o => o.CustomerId == customerId)
                 .OrderByDescending(o => o.OrderDate)
                 .ToListAsync();
@@ -110,6 +112,7 @@ namespace EWDProject.Controllers
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
+                    TempData["SuccessMessage"] = "Order created successfully.";
                     return RedirectToAction(nameof(Details), new { id = order.OrderId });
                 }
                 catch (Exception)
@@ -135,8 +138,9 @@ namespace EWDProject.Controllers
             }
 
             var order = await _context.Orders
+                .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
-                .ThenInclude(oi => oi.Book)
+                    .ThenInclude(oi => oi.Book)
                 .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
 
             if (order == null)
@@ -162,13 +166,19 @@ namespace EWDProject.Controllers
             }
 
             var order = await _context.Orders
+                .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
-                .ThenInclude(oi => oi.Book)
+                    .ThenInclude(oi => oi.Book)
                 .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
 
-            if (order == null || order.OrderStatus != "Saved")
+            if (order == null)
             {
-                TempData["ErrorMessage"] = "You can only edit orders with 'Saved' status.";
+                return NotFound();
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be edited.";
                 return RedirectToAction(nameof(History));
             }
 
@@ -191,9 +201,14 @@ namespace EWDProject.Controllers
                 .Include(o => o.Orderitems)
                 .FirstOrDefaultAsync(o => o.OrderId == id && o.CustomerId == customerId);
 
-            if (order == null || order.OrderStatus != "Saved")
+            if (order == null)
             {
-                TempData["ErrorMessage"] = "You can only edit orders with 'Saved' status.";
+                return NotFound();
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be edited.";
                 return RedirectToAction(nameof(History));
             }
 
@@ -231,6 +246,7 @@ namespace EWDProject.Controllers
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
+                    TempData["SuccessMessage"] = "Order updated successfully.";
                     return RedirectToAction(nameof(Details), new { id = order.OrderId });
                 }
                 catch (Exception)
@@ -256,13 +272,19 @@ namespace EWDProject.Controllers
             }
 
             var order = await _context.Orders
+                .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
-                .ThenInclude(oi => oi.Book)
+                    .ThenInclude(oi => oi.Book)
                 .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
 
-            if (order == null || order.OrderStatus != "Saved")
+            if (order == null)
             {
-                TempData["ErrorMessage"] = "You can only delete orders with 'Saved' status.";
+                return NotFound();
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be deleted.";
                 return RedirectToAction(nameof(History));
             }
 
@@ -288,9 +310,14 @@ namespace EWDProject.Controllers
                         .Include(o => o.Orderitems)
                         .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
 
-                    if (order == null || order.OrderStatus != "Saved")
+                    if (order == null)
                     {
-                        TempData["ErrorMessage"] = "You can only delete orders with 'Saved' status.";
+                        return NotFound();
+                    }
+
+                    if (order.OrderStatus != "Saved")
+                    {
+                        TempData["ErrorMessage"] = "Only saved orders can be deleted.";
                         return RedirectToAction(nameof(History));
                     }
 

@@ -5,57 +5,86 @@
 }
 
 <div class="container mt-4">
-    <h2>Order History</h2>
-
-    <div class="mb-3">
-        <a asp-action="Create" class="btn btn-primary">Create New Order</a>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Order History</h2>
+        <a asp-action="Create" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Create New Order
+        </a>
     </div>
 
-    <div class="table-responsive">
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>Order ID</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th>Total Items</th>
-                    <th>Total Amount</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var order in Model)
-                {
-                    var totalAmount = order.Orderitems.Sum(item => item.Book.Price * item.Quantity);
+    @if (!Model.Any())
+    {
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> You haven't placed any orders yet.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
                     <tr>
-                        <td>@order.OrderId</td>
-                        <td>@order.OrderDate.ToString("MM/dd/yyyy HH:mm")</td>
-                        <td>
-                            <span class="badge @(order.OrderStatus == "Saved" ? "bg-warning" : "bg-success")">
-                                @order.OrderStatus
-                            </span>
-                        </td>
-                        <td>@order.Orderitems.Sum(item => item.Quantity)</td>
-                        <td>@totalAmount.ToString("C")</td>
-                        <td>
-                            <div class="btn-group">
-                                <a asp-action="Details" asp-route-id="@order.OrderId" class="btn btn-info btn-sm">
-                                    <i class="bi bi-eye"></i> View
-                                </a>
-                                @if (order.OrderStatus == "Saved")
-                                {
-                                    <a asp-action="Edit" asp-route-id="@order.OrderId" class="btn btn-warning btn-sm">
-                                        <i class="bi bi-pencil"></i> Edit
-                                    </a>
-                                    <a asp-action="Delete" asp-route-id="@order.OrderId" class="btn btn-danger btn-sm">
-                                        <i class="bi bi-trash"></i> Delete
-                                    </a>
-                                }
-                            </div>
-                        </td>
+                        <th>Order #</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Total Items</th>
+                        <th>Total Amount</th>
+                        <th class="text-center">Actions</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+                </thead>
+                <tbody>
+                    @foreach (var order in Model)
+                    {
+                        var totalAmount = order.Orderitems.Sum(item => item.Book.Price * item.Quantity);
+                        <tr>
+                            <td>@order.OrderId</td>
+                            <td>@order.OrderDate.ToString("MMM dd, yyyy HH:mm")</td>
+                            <td>
+                                <span class="badge @(order.OrderStatus == "Saved" ? "bg-warning" : "bg-success")">
+                                    @order.OrderStatus
+                                </span>
+                            </td>
+                            <td>@order.Orderitems.Sum(item => item.Quantity)</td>
+                            <td>@totalAmount.ToString("C")</td>
+                            <td class="text-center">
+                                <div class="btn-group">
+                                    <a asp-action="Details" asp-route-id="@order.OrderId"
+                                       class="btn btn-info btn-sm" title="View Details">
+                                        <i class="bi bi-eye"></i> View
+                                    </a>
+                                    @if (order.OrderStatus == "Saved")
+                                    {
+                                        <a asp-action="Edit" asp-route-id="@order.OrderId"
+                                           class="btn btn-warning btn-sm" title="Edit Order">
+                                            <i class="bi bi-pencil"></i> Edit
+                                        </a>
+                                        <a asp-action="Delete" asp-route-id="@order.OrderId"
+                                           class="btn btn-danger btn-sm" title="Delete Order">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </a>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+            <i class="bi bi-check-circle"></i> @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+            <i class="bi bi-exclamation-circle"></i> @TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
 </div>

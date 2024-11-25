@@ -2,7 +2,10 @@
 
 @{
     ViewData["Title"] = "Order Details";
-    var isAdmin = ViewBag.IsAdmin;
+    var isAdmin = Context.Session.GetInt32("CustomerId") == 1;
+    var totalAmount = Model.Orderitems?
+        .Where(oi => oi.Book != null)
+        .Sum(oi => oi.Book.Price * oi.Quantity) ?? 0;
 }
 
 <div class="container mt-4">
@@ -10,9 +13,12 @@
         <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
                 <h2>Order Details</h2>
-                <span class="badge @(Model.OrderStatus == "Saved" ? "bg-warning" : "bg-success") fs-5">
-                    @Model.OrderStatus
-                </span>
+                @if (Model.OrderStatus != null)
+                {
+                    <span class="badge @(Model.OrderStatus == "Saved" ? "bg-warning" : "bg-success") fs-5">
+                        @Model.OrderStatus
+                    </span>
+                }
             </div>
         </div>
         <div class="card-body">
@@ -23,7 +29,7 @@
                 @if (isAdmin)
                 {
                     <dt class="col-sm-3">Customer:</dt>
-                    <dd class="col-sm-9">@Model.Customer.Name</dd>
+                    <dd class="col-sm-9">@Model.Customer?.Name</dd>
                 }
 
                 <dt class="col-sm-3">Order Date:</dt>
@@ -31,51 +37,66 @@
             </dl>
 
             <h4>Order Items</h4>
-            <div class="table-responsive">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Title</th>
-                            <th>Author</th>
-                            <th>Price</th>
-                            <th>Quantity</th>
-                            <th>Subtotal</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in Model.Orderitems)
-                        {
+            @if (Model.Orderitems?.Any() == true)
+            {
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
                             <tr>
-                                <td>@item.Book.Title</td>
-                                <td>@item.Book.Author</td>
-                                <td>@item.Book.Price.ToString("C")</td>
-                                <td>@item.Quantity</td>
-                                <td>@((item.Book.Price * item.Quantity).ToString("C"))</td>
+                                <th>Title</th>
+                                <th>Author</th>
+                                <th>Price</th>
+                                <th>Quantity</th>
+                                <th>Subtotal</th>
                             </tr>
-                        }
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <td colspan="4" class="text-end"><strong>Total:</strong></td>
-                            <td>
-                                <strong>
-                                    @Model.Orderitems.Sum(item => item.Book.Price * item.Quantity).ToString("C")
-                                </strong>
-                            </td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in Model.Orderitems.Where(oi => oi.Book != null))
+                            {
+                                <tr>
+                                    <td>@item.Book.Title</td>
+                                    <td>@item.Book.Author</td>
+                                    <td>@item.Book.Price.ToString("C")</td>
+                                    <td>@item.Quantity</td>
+                                    <td>@((item.Book.Price * item.Quantity).ToString("C"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="4" class="text-end"><strong>Total:</strong></td>
+                                <td><strong>@totalAmount.ToString("C")</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    No items in this order.
+                </div>
+            }
         </div>
         <div class="card-footer">
             <div class="btn-group">
                 @if (Model.OrderStatus == "Saved")
                 {
                     <form asp-action="ConfirmOrder" asp-route-id="@Model.OrderId" method="post" style="display: inline;">
+                        @Html.AntiForgeryToken()
                         <button type="submit" class="btn btn-success me-2">
                             <i class="bi bi-check-circle"></i> Confirm Order
                         </button>
                     </form>
+                    <a asp-action="Edit" asp-route-id="@Model.OrderId" class="btn btn-warning me-2">
+                        <i class="bi bi-pencil"></i> Edit Order
+                    </a>
+                    <a asp-action="Delete" asp-route-id="@Model.OrderId" class="btn btn-danger me-2">
+                        <i class="bi bi-trash"></i> Delete Order
+                    </a>
+                }
+                else if (isAdmin)
+                {
                     <a asp-action="Edit" asp-route-id="@Model.OrderId" class="btn btn-warning me-2">
                         <i class="bi bi-pencil"></i> Edit Order
                     </a>

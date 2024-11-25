@@ -17,60 +17,9 @@ namespace EWDProject.Controllers
             _context = context;
         }
 
-        // GET: Orders/History
-        public async Task<IActionResult> History()
+        private bool IsAdmin()
         {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null)
-            {
-                return RedirectToAction("Login", "Customers");
-            }
-
-            IQueryable<Order> ordersQuery = _context.Orders
-                .Include(o => o.Customer)
-                .Include(o => o.Orderitems)
-                    .ThenInclude(oi => oi.Book);
-
-            // If not admin, filter by customer
-            if (customerId != 1)
-            {
-                ordersQuery = ordersQuery.Where(o => o.CustomerId == customerId);
-            }
-
-            // Apply ordering after all filters
-            var orders = await ordersQuery.OrderByDescending(o => o.OrderDate).ToListAsync();
-            ViewBag.IsAdmin = customerId == 1;
-
-            return View(orders);
-        }
-
-        // GET: Orders/Details/5
-        public async Task<IActionResult> Details(int? id)
-        {
-            if (id == null)
-            {
-                return NotFound();
-            }
-
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null)
-            {
-                return RedirectToAction("Login", "Customers");
-            }
-
-            var order = await _context.Orders
-                .Include(o => o.Customer)
-                .Include(o => o.Orderitems)
-                    .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
-
-            if (order == null)
-            {
-                return NotFound();
-            }
-
-            ViewBag.IsAdmin = customerId == 1;
-            return View(order);
+            return HttpContext.Session.GetInt32("CustomerId") == 1;
         }
 
         // POST: Orders/ConfirmOrder/5
@@ -84,39 +33,35 @@ namespace EWDProject.Controllers
                 return RedirectToAction("Login", "Customers");
             }
 
-            var order = await _context.Orders
-                .Include(o => o.Orderitems)
-                    .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(o => o.OrderId == id && (customerId == 1 || o.CustomerId == customerId));
-
-            if (order == null)
-            {
-                return NotFound();
-            }
-
-            if (order.OrderStatus != "Saved")
-            {
-                TempData["ErrorMessage"] = "This order has already been confirmed.";
-                return RedirectToAction(nameof(Details), new { id = order.OrderId });
-            }
-
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    // Check stock availability for all items
-                    foreach (var item in order.Orderitems)
+                    var order = await _context.Orders
+                        .Include(o => o.Orderitems)
+                            .ThenInclude(oi => oi.Book)
+                        .FirstOrDefaultAsync(o => o.OrderId == id &&
+                            (IsAdmin() || o.CustomerId == customerId));
+
+                    if (order == null)
                     {
-                        if (item.Quantity > item.Book.Stock)
-                        {
-                            TempData["ErrorMessage"] = $"Not enough stock available for {item.Book.Title}";
-                            return RedirectToAction(nameof(Details), new { id = order.OrderId });
-                        }
+                        return NotFound();
                     }
 
-                    // Update stock and confirm order
+                    if (order.OrderStatus != "Saved")
+                    {
+                        TempData["ErrorMessage"] = "Only saved orders can be confirmed.";
+                        return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                    }
+
+                    // Check stock and update
                     foreach (var item in order.Orderitems)
                     {
+                        if (item.Book == null || item.Quantity > item.Book.Stock)
+                        {
+                            throw new InvalidOperationException($"Insufficient stock for book: {item.Book?.Title ?? "Unknown"}");
+                        }
+
                         item.Book.Stock -= item.Quantity;
                         _context.Update(item.Book);
                     }
@@ -127,15 +72,42 @@ namespace EWDProject.Controllers
                     await transaction.CommitAsync();
 
                     TempData["SuccessMessage"] = "Order confirmed successfully.";
+                    return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                }
+                catch (InvalidOperationException ex)
+                {
+                    await transaction.RollbackAsync();
+                    TempData["ErrorMessage"] = ex.Message;
+                    return RedirectToAction(nameof(Details), new { id = id });
                 }
                 catch (Exception)
                 {
                     await transaction.RollbackAsync();
-                    TempData["ErrorMessage"] = "An error occurred while confirming the order.";
+                    throw;
                 }
             }
+        }
 
-            return RedirectToAction(nameof(Details), new { id = order.OrderId });
+        // GET: Orders/History
+        public async Task<IActionResult> History()
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
+            {
+                return RedirectToAction("Login", "Customers");
+            }
+
+            var query = _context.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Orderitems)
+                    .ThenInclude(oi => oi.Book)
+                .OrderByDescending(o => o.OrderDate);
+
+            var orders = IsAdmin()
+                ? await query.ToListAsync()
+                : await query.Where(o => o.CustomerId == customerId).ToListAsync();
+
+            return View(orders);
         }
 
         // GET: Orders/Create
@@ -179,7 +151,6 @@ namespace EWDProject.Controllers
             {
                 try
                 {
-                    // Get the next available OrderId
                     int nextOrderId = (await _context.Orders.MaxAsync(o => (int?)o.OrderId) ?? 0) + 1;
 
                     var order = new Order
@@ -193,11 +164,16 @@ namespace EWDProject.Controllers
                     _context.Orders.Add(order);
                     await _context.SaveChangesAsync();
 
-                    // Get the next available OrderItemId
                     int nextOrderItemId = (await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0) + 1;
 
                     foreach (var item in orderItems.Where(i => i.Quantity > 0))
                     {
+                        var book = await _context.Books.FindAsync(item.BookId);
+                        if (book == null || item.Quantity > book.Stock)
+                        {
+                            throw new InvalidOperationException($"Insufficient stock for book: {book?.Title ?? "Unknown"}");
+                        }
+
                         var orderItem = new Orderitem
                         {
                             OrderItemId = nextOrderItemId++,
@@ -205,6 +181,12 @@ namespace EWDProject.Controllers
                             BookId = item.BookId,
                             Quantity = item.Quantity
                         };
+
+                        if (action == "Confirm")
+                        {
+                            book.Stock -= item.Quantity;
+                            _context.Update(book);
+                        }
 
                         _context.Orderitems.Add(orderItem);
                     }
@@ -215,12 +197,47 @@ namespace EWDProject.Controllers
                     TempData["SuccessMessage"] = "Order created successfully.";
                     return RedirectToAction(nameof(Details), new { id = order.OrderId });
                 }
+                catch (InvalidOperationException ex)
+                {
+                    await transaction.RollbackAsync();
+                    ModelState.AddModelError("", ex.Message);
+                    ViewBag.Books = _context.Books.ToList();
+                    return View(new Order { CustomerId = customerId.Value });
+                }
                 catch (Exception)
                 {
                     await transaction.RollbackAsync();
                     throw;
                 }
             }
+        }
+
+        // GET: Orders/Details/5
+        public async Task<IActionResult> Details(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId == null)
+            {
+                return RedirectToAction("Login", "Customers");
+            }
+
+            var order = await _context.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Orderitems)
+                    .ThenInclude(oi => oi.Book)
+                .FirstOrDefaultAsync(m => m.OrderId == id && (IsAdmin() || m.CustomerId == customerId));
+
+            if (order == null)
+            {
+                return NotFound();
+            }
+
+            return View(order);
         }
 
         // GET: Orders/Edit/5
@@ -241,14 +258,14 @@ namespace EWDProject.Controllers
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
+                .FirstOrDefaultAsync(m => m.OrderId == id && (IsAdmin() || m.CustomerId == customerId));
 
             if (order == null)
             {
                 return NotFound();
             }
 
-            if (order.OrderStatus != "Saved")
+            if (!IsAdmin() && order.OrderStatus != "Saved")
             {
                 TempData["ErrorMessage"] = "Only saved orders can be edited.";
                 return RedirectToAction(nameof(History));
@@ -271,14 +288,14 @@ namespace EWDProject.Controllers
 
             var order = await _context.Orders
                 .Include(o => o.Orderitems)
-                .FirstOrDefaultAsync(o => o.OrderId == id && (customerId == 1 || o.CustomerId == customerId));
+                .FirstOrDefaultAsync(o => o.OrderId == id && (IsAdmin() || o.CustomerId == customerId));
 
             if (order == null)
             {
                 return NotFound();
             }
 
-            if (order.OrderStatus != "Saved")
+            if (!IsAdmin() && order.OrderStatus != "Saved")
             {
                 TempData["ErrorMessage"] = "Only saved orders can be edited.";
                 return RedirectToAction(nameof(History));
@@ -295,15 +312,33 @@ namespace EWDProject.Controllers
             {
                 try
                 {
-                    // Remove existing order items
+                    // If it's a confirmed order, restore the stock first
+                    if (order.OrderStatus == "Confirmed")
+                    {
+                        foreach (var item in order.Orderitems)
+                        {
+                            var book = await _context.Books.FindAsync(item.BookId);
+                            if (book != null)
+                            {
+                                book.Stock += item.Quantity;
+                                _context.Update(book);
+                            }
+                        }
+                    }
+
                     _context.Orderitems.RemoveRange(order.Orderitems);
                     await _context.SaveChangesAsync();
 
-                    // Get the next available OrderItemId
                     int nextOrderItemId = (await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0) + 1;
 
                     foreach (var item in orderItems.Where(i => i.Quantity > 0))
                     {
+                        var book = await _context.Books.FindAsync(item.BookId);
+                        if (book == null || item.Quantity > book.Stock)
+                        {
+                            throw new InvalidOperationException($"Insufficient stock for book: {book?.Title ?? "Unknown"}");
+                        }
+
                         var orderItem = new Orderitem
                         {
                             OrderItemId = nextOrderItemId++,
@@ -311,6 +346,12 @@ namespace EWDProject.Controllers
                             BookId = item.BookId,
                             Quantity = item.Quantity
                         };
+
+                        if (order.OrderStatus == "Confirmed")
+                        {
+                            book.Stock -= item.Quantity;
+                            _context.Update(book);
+                        }
 
                         _context.Orderitems.Add(orderItem);
                     }
@@ -320,6 +361,13 @@ namespace EWDProject.Controllers
 
                     TempData["SuccessMessage"] = "Order updated successfully.";
                     return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                }
+                catch (InvalidOperationException ex)
+                {
+                    await transaction.RollbackAsync();
+                    ModelState.AddModelError("", ex.Message);
+                    ViewBag.Books = await _context.Books.ToListAsync();
+                    return View(order);
                 }
                 catch (Exception)
                 {
@@ -347,14 +395,14 @@ namespace EWDProject.Controllers
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
+                .FirstOrDefaultAsync(m => m.OrderId == id && (IsAdmin() || m.CustomerId == customerId));
 
             if (order == null)
             {
                 return NotFound();
             }
 
-            if (order.OrderStatus != "Saved")
+            if (!IsAdmin() && order.OrderStatus != "Saved")
             {
                 TempData["ErrorMessage"] = "Only saved orders can be deleted.";
                 return RedirectToAction(nameof(History));
@@ -380,17 +428,31 @@ namespace EWDProject.Controllers
                 {
                     var order = await _context.Orders
                         .Include(o => o.Orderitems)
-                        .FirstOrDefaultAsync(m => m.OrderId == id && (customerId == 1 || m.CustomerId == customerId));
+                        .FirstOrDefaultAsync(m => m.OrderId == id && (IsAdmin() || m.CustomerId == customerId));
 
                     if (order == null)
                     {
                         return NotFound();
                     }
 
-                    if (order.OrderStatus != "Saved")
+                    if (!IsAdmin() && order.OrderStatus != "Saved")
                     {
                         TempData["ErrorMessage"] = "Only saved orders can be deleted.";
                         return RedirectToAction(nameof(History));
+                    }
+
+                    // If it's a confirmed order, restore the stock
+                    if (order.OrderStatus == "Confirmed")
+                    {
+                        foreach (var item in order.Orderitems)
+                        {
+                            var book = await _context.Books.FindAsync(item.BookId);
+                            if (book != null)
+                            {
+                                book.Stock += item.Quantity;
+                                _context.Update(book);
+                            }
+                        }
                     }
 
                     _context.Orderitems.RemoveRange(order.Orderitems);

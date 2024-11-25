@@ -22,6 +22,12 @@ namespace EWDProject.Controllers
             return HttpContext.Session.GetInt32("CustomerId") == 1;
         }
 
+        private bool CanAccessOrder(Order order)
+        {
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            return IsAdmin() || (order.CustomerId == customerId && order.OrderStatus == "Saved");
+        }
+
         // GET: Orders/History
         public async Task<IActionResult> History()
         {
@@ -37,6 +43,7 @@ namespace EWDProject.Controllers
                     .ThenInclude(oi => oi.Book)
                 .OrderByDescending(o => o.OrderDate);
 
+            // Admin can see all orders, customers can only see their own
             var orders = IsAdmin()
                 ? await query.ToListAsync()
                 : await query.Where(o => o.CustomerId == customerId).ToListAsync();
@@ -62,10 +69,9 @@ namespace EWDProject.Controllers
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id &&
-                    (IsAdmin() || m.CustomerId == customerId));
+                .FirstOrDefaultAsync(m => m.OrderId == id);
 
-            if (order == null)
+            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
             {
                 return NotFound();
             }
@@ -193,10 +199,9 @@ namespace EWDProject.Controllers
                     var order = await _context.Orders
                         .Include(o => o.Orderitems)
                             .ThenInclude(oi => oi.Book)
-                        .FirstOrDefaultAsync(o => o.OrderId == id &&
-                            (IsAdmin() || o.CustomerId == customerId));
+                        .FirstOrDefaultAsync(o => o.OrderId == id);
 
-                    if (order == null)
+                    if (order == null || (!IsAdmin() && order.CustomerId != customerId))
                     {
                         return NotFound();
                     }
@@ -256,15 +261,18 @@ namespace EWDProject.Controllers
             }
 
             var order = await _context.Orders
-                .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
-                    .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id &&
-                    (IsAdmin() || (m.CustomerId == customerId && m.OrderStatus == "Saved")));
+                .FirstOrDefaultAsync(o => o.OrderId == id);
 
-            if (order == null)
+            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
             {
                 return NotFound();
+            }
+
+            if (!IsAdmin() && order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be edited.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             ViewBag.Books = await _context.Books.ToListAsync();
@@ -284,12 +292,17 @@ namespace EWDProject.Controllers
 
             var order = await _context.Orders
                 .Include(o => o.Orderitems)
-                .FirstOrDefaultAsync(o => o.OrderId == id &&
-                    (IsAdmin() || (o.CustomerId == customerId && o.OrderStatus == "Saved")));
+                .FirstOrDefaultAsync(o => o.OrderId == id);
 
-            if (order == null)
+            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
             {
                 return NotFound();
+            }
+
+            if (!IsAdmin() && order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be edited.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             if (orderItems == null || !orderItems.Any(i => i.Quantity > 0))
@@ -303,20 +316,6 @@ namespace EWDProject.Controllers
             {
                 try
                 {
-                    // If it's a confirmed order, restore the stock first
-                    if (order.OrderStatus == "Confirmed")
-                    {
-                        foreach (var item in order.Orderitems)
-                        {
-                            var book = await _context.Books.FindAsync(item.BookId);
-                            if (book != null)
-                            {
-                                book.Stock += item.Quantity;
-                                _context.Update(book);
-                            }
-                        }
-                    }
-
                     // Remove existing order items
                     _context.Orderitems.RemoveRange(order.Orderitems);
                     await _context.SaveChangesAsync();
@@ -339,12 +338,6 @@ namespace EWDProject.Controllers
                             BookId = item.BookId,
                             Quantity = item.Quantity
                         };
-
-                        if (order.OrderStatus == "Confirmed")
-                        {
-                            book.Stock -= item.Quantity;
-                            _context.Update(book);
-                        }
 
                         _context.Orderitems.Add(orderItem);
                     }
@@ -388,12 +381,17 @@ namespace EWDProject.Controllers
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id &&
-                    (IsAdmin() || (m.CustomerId == customerId && m.OrderStatus == "Saved")));
+                .FirstOrDefaultAsync(m => m.OrderId == id);
 
-            if (order == null)
+            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
             {
                 return NotFound();
+            }
+
+            if (!IsAdmin() && order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be deleted.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             return View(order);
@@ -416,16 +414,21 @@ namespace EWDProject.Controllers
                 {
                     var order = await _context.Orders
                         .Include(o => o.Orderitems)
-                        .FirstOrDefaultAsync(m => m.OrderId == id &&
-                            (IsAdmin() || (m.CustomerId == customerId && m.OrderStatus == "Saved")));
+                        .FirstOrDefaultAsync(m => m.OrderId == id);
 
-                    if (order == null)
+                    if (order == null || (!IsAdmin() && order.CustomerId != customerId))
                     {
                         return NotFound();
                     }
 
-                    // If it's a confirmed order, restore the stock
-                    if (order.OrderStatus == "Confirmed")
+                    if (!IsAdmin() && order.OrderStatus != "Saved")
+                    {
+                        TempData["ErrorMessage"] = "Only saved orders can be deleted.";
+                        return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                    }
+
+                    // If it's a confirmed order and admin is deleting, restore the stock
+                    if (order.OrderStatus == "Confirmed" && IsAdmin())
                     {
                         foreach (var item in order.Orderitems)
                         {

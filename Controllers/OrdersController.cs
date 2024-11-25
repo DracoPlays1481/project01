@@ -73,45 +73,51 @@ namespace EWDProject.Controllers
                 return View(new Order { CustomerId = customerId.Value });
             }
 
-            var order = new Order
+            using (var transaction = await _context.Database.BeginTransactionAsync())
             {
-                CustomerId = customerId.Value,
-                OrderDate = DateTime.Now,
-                OrderStatus = action == "Save" ? "Saved" : "Confirmed"
-            };
-
-            // Get the next available OrderId
-            int nextOrderId = await _context.Orders
-                .Select(o => o.OrderId)
-                .DefaultIfEmpty()
-                .MaxAsync() + 1;
-
-            order.OrderId = nextOrderId;
-
-            _context.Orders.Add(order);
-            await _context.SaveChangesAsync();
-
-            foreach (var item in orderItems.Where(i => i.Quantity > 0))
-            {
-                // Get the next available OrderItemId
-                int nextOrderItemId = await _context.Orderitems
-                    .Select(oi => oi.OrderItemId)
-                    .DefaultIfEmpty()
-                    .MaxAsync() + 1;
-
-                var orderItem = new Orderitem
+                try
                 {
-                    OrderItemId = nextOrderItemId,
-                    OrderId = order.OrderId,
-                    BookId = item.BookId,
-                    Quantity = item.Quantity
-                };
+                    // Get the next available OrderId
+                    int nextOrderId = (await _context.Orders.MaxAsync(o => (int?)o.OrderId) ?? 0) + 1;
 
-                _context.Orderitems.Add(orderItem);
+                    var order = new Order
+                    {
+                        OrderId = nextOrderId,
+                        CustomerId = customerId.Value,
+                        OrderDate = DateTime.Now,
+                        OrderStatus = action == "Save" ? "Saved" : "Confirmed"
+                    };
+
+                    _context.Orders.Add(order);
+                    await _context.SaveChangesAsync();
+
+                    // Get the next available OrderItemId
+                    int nextOrderItemId = (await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0) + 1;
+
+                    foreach (var item in orderItems.Where(i => i.Quantity > 0))
+                    {
+                        var orderItem = new Orderitem
+                        {
+                            OrderItemId = nextOrderItemId++,
+                            OrderId = order.OrderId,
+                            BookId = item.BookId,
+                            Quantity = item.Quantity
+                        };
+
+                        _context.Orderitems.Add(orderItem);
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
             }
-
-            await _context.SaveChangesAsync();
-            return RedirectToAction(nameof(Details), new { id = order.OrderId });
         }
 
         // GET: Orders/Details/5
@@ -162,10 +168,11 @@ namespace EWDProject.Controllers
 
             if (order == null || order.OrderStatus != "Saved")
             {
-                return NotFound();
+                TempData["ErrorMessage"] = "You can only edit orders with 'Saved' status.";
+                return RedirectToAction(nameof(History));
             }
 
-            ViewBag.Books = _context.Books.ToList();
+            ViewBag.Books = await _context.Books.ToListAsync();
             return View(order);
         }
 
@@ -186,41 +193,52 @@ namespace EWDProject.Controllers
 
             if (order == null || order.OrderStatus != "Saved")
             {
-                return NotFound();
+                TempData["ErrorMessage"] = "You can only edit orders with 'Saved' status.";
+                return RedirectToAction(nameof(History));
             }
 
             if (orderItems == null || !orderItems.Any(i => i.Quantity > 0))
             {
                 ModelState.AddModelError("", "Please select at least one book");
-                ViewBag.Books = _context.Books.ToList();
+                ViewBag.Books = await _context.Books.ToListAsync();
                 return View(order);
             }
 
-            // Remove existing order items
-            _context.Orderitems.RemoveRange(order.Orderitems);
-
-            // Add new order items
-            foreach (var item in orderItems.Where(i => i.Quantity > 0))
+            using (var transaction = await _context.Database.BeginTransactionAsync())
             {
-                // Get the next available OrderItemId
-                int nextOrderItemId = await _context.Orderitems
-                    .Select(oi => oi.OrderItemId)
-                    .DefaultIfEmpty()
-                    .MaxAsync() + 1;
-
-                var orderItem = new Orderitem
+                try
                 {
-                    OrderItemId = nextOrderItemId,
-                    OrderId = order.OrderId,
-                    BookId = item.BookId,
-                    Quantity = item.Quantity
-                };
+                    // Remove existing order items
+                    _context.Orderitems.RemoveRange(order.Orderitems);
+                    await _context.SaveChangesAsync();
 
-                _context.Orderitems.Add(orderItem);
+                    // Get the next available OrderItemId
+                    int nextOrderItemId = (await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0) + 1;
+
+                    foreach (var item in orderItems.Where(i => i.Quantity > 0))
+                    {
+                        var orderItem = new Orderitem
+                        {
+                            OrderItemId = nextOrderItemId++,
+                            OrderId = order.OrderId,
+                            BookId = item.BookId,
+                            Quantity = item.Quantity
+                        };
+
+                        _context.Orderitems.Add(orderItem);
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
             }
-
-            await _context.SaveChangesAsync();
-            return RedirectToAction(nameof(Details), new { id = order.OrderId });
         }
 
         // GET: Orders/Delete/5
@@ -244,7 +262,8 @@ namespace EWDProject.Controllers
 
             if (order == null || order.OrderStatus != "Saved")
             {
-                return NotFound();
+                TempData["ErrorMessage"] = "You can only delete orders with 'Saved' status.";
+                return RedirectToAction(nameof(History));
             }
 
             return View(order);
@@ -261,18 +280,34 @@ namespace EWDProject.Controllers
                 return RedirectToAction("Login", "Customers");
             }
 
-            var order = await _context.Orders
-                .Include(o => o.Orderitems)
-                .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
-
-            if (order != null && order.OrderStatus == "Saved")
+            using (var transaction = await _context.Database.BeginTransactionAsync())
             {
-                _context.Orderitems.RemoveRange(order.Orderitems);
-                _context.Orders.Remove(order);
-                await _context.SaveChangesAsync();
-            }
+                try
+                {
+                    var order = await _context.Orders
+                        .Include(o => o.Orderitems)
+                        .FirstOrDefaultAsync(m => m.OrderId == id && m.CustomerId == customerId);
 
-            return RedirectToAction(nameof(History));
+                    if (order == null || order.OrderStatus != "Saved")
+                    {
+                        TempData["ErrorMessage"] = "You can only delete orders with 'Saved' status.";
+                        return RedirectToAction(nameof(History));
+                    }
+
+                    _context.Orderitems.RemoveRange(order.Orderitems);
+                    _context.Orders.Remove(order);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    TempData["SuccessMessage"] = "Order deleted successfully.";
+                    return RedirectToAction(nameof(History));
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            }
         }
 
         private bool OrderExists(int id)

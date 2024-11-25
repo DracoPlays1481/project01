@@ -5,9 +5,15 @@
 }
 
 <div class="container mt-4">
-    <h2>Order Details</h2>
-
     <div class="card">
+        <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2>Order Details</h2>
+                <span class="badge @(Model.OrderStatus == "Saved" ? "bg-warning" : "bg-success") fs-5">
+                    @Model.OrderStatus
+                </span>
+            </div>
+        </div>
         <div class="card-body">
             <dl class="row">
                 <dt class="col-sm-3">Order ID:</dt>
@@ -15,9 +21,6 @@
 
                 <dt class="col-sm-3">Order Date:</dt>
                 <dd class="col-sm-9">@Model.OrderDate.ToString("MM/dd/yyyy HH:mm")</dd>
-
-                <dt class="col-sm-3">Status:</dt>
-                <dd class="col-sm-9">@Model.OrderStatus</dd>
             </dl>
 
             <h4>Order Items</h4>
@@ -46,7 +49,7 @@
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="4" class="text-right"><strong>Total:</strong></td>
+                            <td colspan="4" class="text-end"><strong>Total:</strong></td>
                             <td>
                                 <strong>
                                     @Model.Orderitems.Sum(item => item.Book.Price * item.Quantity).ToString("C")
@@ -57,14 +60,21 @@
                 </table>
             </div>
         </div>
-    </div>
-
-    <div class="mt-3">
-        @if (Model.OrderStatus == "Saved")
-        {
-            <a asp-action="Edit" asp-route-id="@Model.OrderId" class="btn btn-warning">Edit Order</a>
-            <a asp-action="Delete" asp-route-id="@Model.OrderId" class="btn btn-danger">Delete Order</a>
-        }
-        <a asp-action="History" class="btn btn-secondary">Back to List</a>
+        <div class="card-footer">
+            <div class="btn-group">
+                @if (Model.OrderStatus == "Saved")
+                {
+                    <a asp-action="Edit" asp-route-id="@Model.OrderId" class="btn btn-warning">
+                        <i class="bi bi-pencil"></i> Edit Order
+                    </a>
+                    <a asp-action="Delete" asp-route-id="@Model.OrderId" class="btn btn-danger">
+                        <i class="bi bi-trash"></i> Delete Order
+                    </a>
+                }
+                <a asp-action="History" class="btn btn-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to List
+                </a>
+            </div>
+        </div>
     </div>
 </div>

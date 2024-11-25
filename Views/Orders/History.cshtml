@@ -1,0 +1,46 @@
+﻿@model IEnumerable<EWDProject.Models.Order>
+
+@{
+    ViewData["Title"] = "Order History";
+}
+
+<div class="container mt-4">
+    <h2>Order History</h2>
+
+    <div class="mb-3">
+        <a asp-action="Create" class="btn btn-primary">Create New Order</a>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Total Items</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in Model)
+                {
+                    <tr>
+                        <td>@order.OrderId</td>
+                        <td>@order.OrderDate.ToString("MM/dd/yyyy HH:mm")</td>
+                        <td>@order.OrderStatus</td>
+                        <td>@order.Orderitems.Count</td>
+                        <td>
+                            <a asp-action="Details" asp-route-id="@order.OrderId" class="btn btn-info btn-sm">View</a>
+                            @if (order.OrderStatus == "Saved")
+                            {
+                                <a asp-action="Edit" asp-route-id="@order.OrderId" class="btn btn-warning btn-sm">Edit</a>
+                                <a asp-action="Delete" asp-route-id="@order.OrderId" class="btn btn-danger btn-sm">Delete</a>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

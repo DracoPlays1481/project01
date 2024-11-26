@@ -1,0 +1,55 @@
+﻿@model EWDProject.Models.Order
+
+@{
+    ViewData["Title"] = "Create Order";
+    var books = ViewBag.Books as List<EWDProject.Models.Book>;
+}
+
+<div class="container mt-4">
+    <h2>Create New Order</h2>
+
+    <form asp-action="Create" method="post">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Author</th>
+                        <th>Price</th>
+                        <th>Stock</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < books.Count; i++)
+                    {
+                        <tr>
+                            <td>@books[i].Title</td>
+                            <td>@books[i].Author</td>
+                            <td>@books[i].Price.ToString("C")</td>
+                            <td>@books[i].Stock</td>
+                            <td>
+                                <input type="hidden" name="orderItems[@i].BookId" value="@books[i].BookId" />
+                                <input type="number" name="orderItems[@i].Quantity" class="form-control" min="0" max="@books[i].Stock" value="0" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="form-group mt-3">
+            <button type="submit" name="action" value="Save" class="btn btn-primary">Save Order</button>
+            <button type="submit" name="action" value="Confirm" class="btn btn-success">Confirm Order</button>
+            <a asp-action="History" class="btn btn-secondary">Back to List</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+}

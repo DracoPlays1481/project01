@@ -1,0 +1,99 @@
+﻿@model EWDProject.Models.Customer
+
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2>Welcome, @Model.Name!</h2>
+                <form asp-action="Logout" method="post">
+                    <button type="submit" class="btn btn-outline-danger">Logout</button>
+                </form>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h4>Your Information</h4>
+                    <dl class="row">
+                        <dt class="col-sm-4">Name</dt>
+                        <dd class="col-sm-8">@Model.Name</dd>
+
+                        <dt class="col-sm-4">Email</dt>
+                        <dd class="col-sm-8">@Model.Email</dd>
+
+                        <dt class="col-sm-4">Phone</dt>
+                        <dd class="col-sm-8">@Model.Phone</dd>
+
+                        <dt class="col-sm-4">Address</dt>
+                        <dd class="col-sm-8">@Model.Address</dd>
+                    </dl>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-grid gap-3">
+                        <a asp-controller="Orders" asp-action="History" class="btn btn-primary btn-lg">
+                            <i class="bi bi-clock-history"></i> View Order History
+                        </a>
+                        <a asp-controller="Orders" asp-action="Create" class="btn btn-success btn-lg">
+                            <i class="bi bi-cart-plus"></i> Place New Order
+                        </a>
+                        @if (Model.CustomerId == 1)
+                        {
+                            <a asp-action="CustomersList" class="btn btn-info btn-lg">
+                                <i class="bi bi-people"></i> Manage Customers
+                            </a>
+                        }
+                        <a asp-action="Edit" asp-route-id="@Model.CustomerId" class="btn btn-warning">
+                            <i class="bi bi-pencil"></i> Edit Profile
+                        </a>
+                        @if (Model.CustomerId != 1)
+                        {
+                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
+                                <i class="bi bi-trash"></i> Delete Account
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Account Modal -->
+<div class="modal fade" id="deleteAccountModal" tabindex="-1" aria-labelledby="deleteAccountModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteAccountModalLabel">Delete Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-danger">Warning: This action cannot be undone!</p>
+                <p>Deleting your account will:</p>
+                <ul>
+                    <li>Permanently remove your account information</li>
+                    <li>Delete all your orders (both saved and confirmed)</li>
+                    <li>Remove all your order history</li>
+                </ul>
+                <p>Are you sure you want to proceed?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form asp-action="DeleteAccount" method="post">
+                    <input type="hidden" name="id" value="@Model.CustomerId" />
+                    <button type="submit" class="btn btn-danger">Delete My Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger mt-3">
+        @TempData["ErrorMessage"]
+    </div>
+}

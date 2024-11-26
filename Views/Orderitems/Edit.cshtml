@@ -1,0 +1,58 @@
+﻿@model EWDProject.Models.Order
+
+@{
+    ViewData["Title"] = "Edit Order";
+    var books = ViewBag.Books as List<EWDProject.Models.Book>;
+}
+
+<div class="container mt-4">
+    <h2>Edit Order</h2>
+
+    <form asp-action="Edit" method="post">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+        <input type="hidden" asp-for="OrderId" />
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Author</th>
+                        <th>Price</th>
+                        <th>Stock</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < books.Count; i++)
+                    {
+                        var existingItem = Model.Orderitems.FirstOrDefault(oi => oi.BookId == books[i].BookId);
+                        var quantity = existingItem?.Quantity ?? 0;
+
+                        <tr>
+                            <td>@books[i].Title</td>
+                            <td>@books[i].Author</td>
+                            <td>@books[i].Price.ToString("C")</td>
+                            <td>@books[i].Stock</td>
+                            <td>
+                                <input type="hidden" name="orderItems[@i].BookId" value="@books[i].BookId" />
+                                <input type="number" name="orderItems[@i].Quantity" class="form-control" min="0" max="@books[i].Stock" value="@quantity" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="form-group mt-3">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a asp-action="Details" asp-route-id="@Model.OrderId" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+}

@@ -2,7 +2,7 @@
 
 @{
     ViewData["Title"] = "Order Details";
-    var isAdmin = Context.Session.GetInt32("CustomerId") == 1;
+    var isAdmin = Context.Session.GetInt32("AdminId") != null;
     var isCustomerOrder = Model.CustomerId == Context.Session.GetInt32("CustomerId");
     var canModify = isAdmin || (isCustomerOrder && Model.OrderStatus == "Saved");
     var totalAmount = Model.Orderitems?
@@ -106,20 +106,4 @@
             </div>
         </div>
     </div>
-
-    @if (TempData["SuccessMessage"] != null)
-    {
-        <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
-            <i class="bi bi-check-circle"></i> @TempData["SuccessMessage"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    }
-
-    @if (TempData["ErrorMessage"] != null)
-    {
-        <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
-            <i class="bi bi-exclamation-circle"></i> @TempData["ErrorMessage"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    }
 </div>

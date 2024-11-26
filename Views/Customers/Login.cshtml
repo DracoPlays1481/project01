@@ -1,8 +1,7 @@
 ﻿@model EWDProject.Models.Customer
 
-
 @{
-    ViewData["Title"] = "Login";
+    ViewData["Title"] = "Customer Login";
 }
 
 <div class="row justify-content-center">
@@ -32,6 +31,10 @@
                         <a asp-action="Register" class="btn btn-success ms-2">Register</a>
                     </div>
                 </form>
+
+                <div class="text-center mt-3">
+                    <p>Are you an admin? <a asp-controller="Admins" asp-action="Login">Login as Admin</a></p>
+                </div>
             </div>
         </div>
     </div>

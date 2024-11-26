@@ -17,70 +17,39 @@ namespace EWDProject.Controllers
             _context = context;
         }
 
-        private async Task<bool> IsAdmin()
+        private async Task<int> GenerateNewOrderId()
         {
-            var adminId = HttpContext.Session.GetInt32("AdminId");
-            return adminId != null && await _context.Admins.AnyAsync(a => a.AdminId == adminId);
+            var maxId = await _context.Orders.MaxAsync(o => (int?)o.OrderId) ?? 0;
+            return maxId + 1;
         }
 
-        private async Task<bool> IsAuthenticated()
+        private async Task<int> GenerateNewOrderItemId()
         {
-            return await IsAdmin() || HttpContext.Session.GetInt32("CustomerId") != null;
-        }
-
-        private IActionResult RedirectToLogin()
-        {
-            if (HttpContext.Session.GetInt32("AdminId") != null)
-            {
-                return RedirectToAction("Login", "Admins");
-            }
-            return RedirectToAction("Login", "Customers");
-        }
-
-        private async Task<bool> CanModifyOrder(Order order)
-        {
-            if (order == null) return false;
-
-            // Admin can modify any order
-            if (await IsAdmin()) return true;
-
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId == null) return false;
-
-            // Customer can only modify their own saved orders
-            return order.CustomerId == customerId && order.OrderStatus == "Saved";
+            var maxId = await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0;
+            return maxId + 1;
         }
 
         public async Task<IActionResult> History()
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
             var query = _context.Orders
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
                 .OrderByDescending(o => o.OrderDate);
 
-            var isAdmin = await IsAdmin();
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            // If customer is logged in, only show their orders
+            if (customerId != null)
+            {
+                query = query.Where(o => o.CustomerId == customerId);
+            }
 
-            var orders = isAdmin
-                ? await query.ToListAsync()
-                : await query.Where(o => o.CustomerId == customerId).ToListAsync();
-
+            var orders = await query.ToListAsync();
             return View(orders);
         }
 
         public async Task<IActionResult> Details(int? id)
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             if (id == null)
             {
                 return NotFound();
@@ -97,10 +66,8 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            var isAdmin = await IsAdmin();
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-
-            if (!isAdmin && order.CustomerId != customerId)
+            if (customerId != null && order.CustomerId != customerId)
             {
                 return RedirectToAction(nameof(History));
             }
@@ -110,13 +77,8 @@ namespace EWDProject.Controllers
 
         public async Task<IActionResult> Create()
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (!await IsAdmin() && customerId == null)
+            if (customerId == null)
             {
                 return RedirectToAction("Login", "Customers");
             }
@@ -129,13 +91,8 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(List<OrderItemViewModel> orderItems, string action)
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (!await IsAdmin() && customerId == null)
+            if (customerId == null)
             {
                 return RedirectToAction("Login", "Customers");
             }
@@ -146,8 +103,10 @@ namespace EWDProject.Controllers
                 {
                     try
                     {
+                        var orderId = await GenerateNewOrderId();
                         var order = new Order
                         {
+                            OrderId = orderId,
                             CustomerId = customerId.Value,
                             OrderDate = DateTime.Now,
                             OrderStatus = action == "Confirm" ? "Confirmed" : "Saved"
@@ -156,7 +115,8 @@ namespace EWDProject.Controllers
                         _context.Add(order);
                         await _context.SaveChangesAsync();
 
-                        foreach (var item in orderItems.Where(i => i.Quantity > 0))
+                        var itemsToAdd = orderItems.Where(i => i.Quantity > 0).ToList();
+                        foreach (var item in itemsToAdd)
                         {
                             var book = await _context.Books.FindAsync(item.BookId);
                             if (book == null || (order.OrderStatus == "Confirmed" && book.Stock < item.Quantity))
@@ -166,10 +126,10 @@ namespace EWDProject.Controllers
 
                             var orderItem = new Orderitem
                             {
+                                OrderItemId = await GenerateNewOrderItemId(),
                                 OrderId = order.OrderId,
                                 BookId = item.BookId,
-                                Quantity = item.Quantity,
-                                OrderItemId = await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) + 1 ?? 1
+                                Quantity = item.Quantity
                             };
 
                             _context.Add(orderItem);
@@ -200,11 +160,6 @@ namespace EWDProject.Controllers
 
         public async Task<IActionResult> Edit(int? id)
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             if (id == null)
             {
                 return NotFound();
@@ -219,9 +174,16 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            if (!await CanModifyOrder(order))
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != null && order.CustomerId != customerId)
             {
                 return RedirectToAction(nameof(History));
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be edited.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             ViewBag.Books = await _context.Books.ToListAsync();
@@ -232,11 +194,6 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int id, List<OrderItemViewModel> orderItems)
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             var order = await _context.Orders
                 .Include(o => o.Orderitems)
                 .FirstOrDefaultAsync(m => m.OrderId == id);
@@ -246,9 +203,16 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            if (!await CanModifyOrder(order))
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != null && order.CustomerId != customerId)
             {
                 return RedirectToAction(nameof(History));
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be edited.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             if (ModelState.IsValid)
@@ -257,26 +221,20 @@ namespace EWDProject.Controllers
                 {
                     try
                     {
-                        // Remove existing order items
-                        var existingItems = await _context.Orderitems
-                            .Where(oi => oi.OrderId == id)
-                            .ToListAsync();
-                        _context.Orderitems.RemoveRange(existingItems);
-                        await _context.SaveChangesAsync();
+                        // Remove existing items
+                        await _context.Database.ExecuteSqlRawAsync("DELETE FROM ORDERITEM WHERE OrderID = {0}", id);
 
-                        // Add new order items
-                        var maxOrderItemId = await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0;
+                        // Add new items
                         foreach (var item in orderItems.Where(i => i.Quantity > 0))
                         {
-                            maxOrderItemId++;
                             var orderItem = new Orderitem
                             {
-                                OrderItemId = maxOrderItemId,
+                                OrderItemId = await GenerateNewOrderItemId(),
                                 OrderId = order.OrderId,
                                 BookId = item.BookId,
                                 Quantity = item.Quantity
                             };
-                            _context.Orderitems.Add(orderItem);
+                            _context.Add(orderItem);
                         }
 
                         await _context.SaveChangesAsync();
@@ -299,11 +257,6 @@ namespace EWDProject.Controllers
 
         public async Task<IActionResult> Delete(int? id)
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             if (id == null)
             {
                 return NotFound();
@@ -320,9 +273,16 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            if (!await CanModifyOrder(order))
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != null && order.CustomerId != customerId)
             {
                 return RedirectToAction(nameof(History));
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be deleted.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             return View(order);
@@ -332,14 +292,8 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             var order = await _context.Orders
                 .Include(o => o.Orderitems)
-                    .ThenInclude(oi => oi.Book)
                 .FirstOrDefaultAsync(m => m.OrderId == id);
 
             if (order == null)
@@ -347,37 +301,34 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            if (!await CanModifyOrder(order))
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != null && order.CustomerId != customerId)
             {
                 return RedirectToAction(nameof(History));
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be deleted.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    if (order.OrderStatus == "Confirmed")
-                    {
-                        foreach (var item in order.Orderitems)
-                        {
-                            if (item.Book != null)
-                            {
-                                item.Book.Stock += item.Quantity;
-                                _context.Update(item.Book);
-                            }
-                        }
-                    }
-
-                    _context.Orderitems.RemoveRange(order.Orderitems);
-                    _context.Orders.Remove(order);
+                    await _context.Database.ExecuteSqlRawAsync("DELETE FROM ORDERITEM WHERE OrderID = {0}", id);
+                    await _context.Database.ExecuteSqlRawAsync("DELETE FROM [ORDER] WHERE OrderID = {0}", id);
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
+                    TempData["SuccessMessage"] = "Order deleted successfully.";
                     return RedirectToAction(nameof(History));
                 }
                 catch (Exception)
                 {
                     await transaction.RollbackAsync();
+                    TempData["ErrorMessage"] = "Error deleting order.";
                     return RedirectToAction(nameof(Delete), new { id = order.OrderId });
                 }
             }
@@ -387,11 +338,6 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> ConfirmOrder(int id)
         {
-            if (!await IsAuthenticated())
-            {
-                return RedirectToLogin();
-            }
-
             var order = await _context.Orders
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
@@ -402,9 +348,16 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            if (!await CanModifyOrder(order))
+            var customerId = HttpContext.Session.GetInt32("CustomerId");
+            if (customerId != null && order.CustomerId != customerId)
             {
                 return RedirectToAction(nameof(History));
+            }
+
+            if (order.OrderStatus != "Saved")
+            {
+                TempData["ErrorMessage"] = "Only saved orders can be confirmed.";
+                return RedirectToAction(nameof(Details), new { id = order.OrderId });
             }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())

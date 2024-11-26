@@ -45,8 +45,7 @@
                         .Sum(oi => oi.Quantity) ?? 0;
                         var totalAmount = order.Orderitems?.Where(oi => oi.Book != null)
                         .Sum(oi => oi.Book.Price * oi.Quantity) ?? 0;
-                        var isCustomerOrder = order.CustomerId == customerId;
-                        var canModify = order.OrderStatus == "Saved" && (isAdmin || isCustomerOrder);
+                        var canModify = isAdmin || (order.CustomerId == customerId && order.OrderStatus == "Saved");
 
                         <tr>
                             <td>@order.OrderId</td>
@@ -70,12 +69,15 @@
                                     </a>
                                     @if (canModify)
                                     {
-                                        <form asp-action="ConfirmOrder" asp-route-id="@order.OrderId" method="post" style="display: inline;">
-                                            @Html.AntiForgeryToken()
-                                            <button type="submit" class="btn btn-success btn-sm" title="Confirm Order">
-                                                <i class="bi bi-check-circle"></i> Confirm
-                                            </button>
-                                        </form>
+                                        if (order.OrderStatus == "Saved")
+                                        {
+                                            <form asp-action="ConfirmOrder" asp-route-id="@order.OrderId" method="post" style="display: inline;">
+                                                @Html.AntiForgeryToken()
+                                                <button type="submit" class="btn btn-success btn-sm" title="Confirm Order">
+                                                    <i class="bi bi-check-circle"></i> Confirm
+                                                </button>
+                                            </form>
+                                        }
                                         <a asp-action="Edit" asp-route-id="@order.OrderId"
                                            class="btn btn-warning btn-sm" title="Edit Order">
                                             <i class="bi bi-pencil"></i> Edit

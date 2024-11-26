@@ -22,10 +22,18 @@ namespace EWDProject.Controllers
             return HttpContext.Session.GetInt32("CustomerId") == 1;
         }
 
-        private bool CanAccessOrder(Order order)
+        private bool CanModifyOrder(Order order)
         {
+            if (order == null) return false;
+
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            return IsAdmin() || (order.CustomerId == customerId && order.OrderStatus == "Saved");
+            if (customerId == null) return false;
+
+            // Admin can modify any order
+            if (IsAdmin()) return true;
+
+            // Customer can only modify their own saved orders
+            return order.CustomerId == customerId && order.OrderStatus == "Saved";
         }
 
         // GET: Orders/History
@@ -43,7 +51,6 @@ namespace EWDProject.Controllers
                     .ThenInclude(oi => oi.Book)
                 .OrderByDescending(o => o.OrderDate);
 
-            // Admin can see all orders, customers can only see their own
             var orders = IsAdmin()
                 ? await query.ToListAsync()
                 : await query.Where(o => o.CustomerId == customerId).ToListAsync();
@@ -69,9 +76,10 @@ namespace EWDProject.Controllers
                 .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
                     .ThenInclude(oi => oi.Book)
-                .FirstOrDefaultAsync(m => m.OrderId == id);
+                .FirstOrDefaultAsync(m => m.OrderId == id &&
+                    (IsAdmin() || m.CustomerId == customerId));
 
-            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
+            if (order == null)
             {
                 return NotFound();
             }
@@ -201,9 +209,15 @@ namespace EWDProject.Controllers
                             .ThenInclude(oi => oi.Book)
                         .FirstOrDefaultAsync(o => o.OrderId == id);
 
-                    if (order == null || (!IsAdmin() && order.CustomerId != customerId))
+                    if (order == null)
                     {
                         return NotFound();
+                    }
+
+                    if (!CanModifyOrder(order))
+                    {
+                        TempData["ErrorMessage"] = "You don't have permission to modify this order.";
+                        return RedirectToAction(nameof(History));
                     }
 
                     if (order.OrderStatus != "Saved")
@@ -261,18 +275,20 @@ namespace EWDProject.Controllers
             }
 
             var order = await _context.Orders
+                .Include(o => o.Customer)
                 .Include(o => o.Orderitems)
-                .FirstOrDefaultAsync(o => o.OrderId == id);
+                    .ThenInclude(oi => oi.Book)
+                .FirstOrDefaultAsync(m => m.OrderId == id);
 
-            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
+            if (order == null)
             {
                 return NotFound();
             }
 
-            if (!IsAdmin() && order.OrderStatus != "Saved")
+            if (!CanModifyOrder(order))
             {
-                TempData["ErrorMessage"] = "Only saved orders can be edited.";
-                return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                TempData["ErrorMessage"] = "You don't have permission to edit this order.";
+                return RedirectToAction(nameof(History));
             }
 
             ViewBag.Books = await _context.Books.ToListAsync();
@@ -294,15 +310,15 @@ namespace EWDProject.Controllers
                 .Include(o => o.Orderitems)
                 .FirstOrDefaultAsync(o => o.OrderId == id);
 
-            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
+            if (order == null)
             {
                 return NotFound();
             }
 
-            if (!IsAdmin() && order.OrderStatus != "Saved")
+            if (!CanModifyOrder(order))
             {
-                TempData["ErrorMessage"] = "Only saved orders can be edited.";
-                return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                TempData["ErrorMessage"] = "You don't have permission to edit this order.";
+                return RedirectToAction(nameof(History));
             }
 
             if (orderItems == null || !orderItems.Any(i => i.Quantity > 0))
@@ -383,15 +399,15 @@ namespace EWDProject.Controllers
                     .ThenInclude(oi => oi.Book)
                 .FirstOrDefaultAsync(m => m.OrderId == id);
 
-            if (order == null || (!IsAdmin() && order.CustomerId != customerId))
+            if (order == null)
             {
                 return NotFound();
             }
 
-            if (!IsAdmin() && order.OrderStatus != "Saved")
+            if (!CanModifyOrder(order))
             {
-                TempData["ErrorMessage"] = "Only saved orders can be deleted.";
-                return RedirectToAction(nameof(Details), new { id = order.OrderId });
+                TempData["ErrorMessage"] = "You don't have permission to delete this order.";
+                return RedirectToAction(nameof(History));
             }
 
             return View(order);
@@ -416,29 +432,15 @@ namespace EWDProject.Controllers
                         .Include(o => o.Orderitems)
                         .FirstOrDefaultAsync(m => m.OrderId == id);
 
-                    if (order == null || (!IsAdmin() && order.CustomerId != customerId))
+                    if (order == null)
                     {
                         return NotFound();
                     }
 
-                    if (!IsAdmin() && order.OrderStatus != "Saved")
+                    if (!CanModifyOrder(order))
                     {
-                        TempData["ErrorMessage"] = "Only saved orders can be deleted.";
-                        return RedirectToAction(nameof(Details), new { id = order.OrderId });
-                    }
-
-                    // If it's a confirmed order and admin is deleting, restore the stock
-                    if (order.OrderStatus == "Confirmed" && IsAdmin())
-                    {
-                        foreach (var item in order.Orderitems)
-                        {
-                            var book = await _context.Books.FindAsync(item.BookId);
-                            if (book != null)
-                            {
-                                book.Stock += item.Quantity;
-                                _context.Update(book);
-                            }
-                        }
+                        TempData["ErrorMessage"] = "You don't have permission to delete this order.";
+                        return RedirectToAction(nameof(History));
                     }
 
                     _context.Orderitems.RemoveRange(order.Orderitems);

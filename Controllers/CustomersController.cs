@@ -20,8 +20,8 @@ namespace EWDProject.Controllers
         // GET: Customers/CustomersList
         public async Task<IActionResult> CustomersList()
         {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != 1)
+            var isAdmin = await _context.Admins.AnyAsync(a => a.AdminId == HttpContext.Session.GetInt32("AdminId"));
+            if (!isAdmin)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -59,17 +59,10 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != 1) // Only admin can delete customers
+            var isAdmin = await _context.Admins.AnyAsync(a => a.AdminId == HttpContext.Session.GetInt32("AdminId"));
+            if (!isAdmin)
             {
                 return RedirectToAction(nameof(Dashboard));
-            }
-
-            // Prevent deletion of admin account
-            if (id == 1)
-            {
-                TempData["ErrorMessage"] = "The admin account cannot be deleted.";
-                return RedirectToAction(nameof(CustomersList));
             }
 
             var customer = await _context.Customers
@@ -91,17 +84,10 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != 1) // Only admin can delete customers
+            var isAdmin = await _context.Admins.AnyAsync(a => a.AdminId == HttpContext.Session.GetInt32("AdminId"));
+            if (!isAdmin)
             {
                 return RedirectToAction(nameof(Dashboard));
-            }
-
-            // Prevent deletion of admin account
-            if (id == 1)
-            {
-                TempData["ErrorMessage"] = "The admin account cannot be deleted.";
-                return RedirectToAction(nameof(CustomersList));
             }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
@@ -161,10 +147,10 @@ namespace EWDProject.Controllers
         }
 
         // GET: Customers/Create
-        public IActionResult Create()
+        public async Task<IActionResult> Create()
         {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != 1)
+            var isAdmin = await _context.Admins.AnyAsync(a => a.AdminId == HttpContext.Session.GetInt32("AdminId"));
+            if (!isAdmin)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -176,8 +162,8 @@ namespace EWDProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create([Bind("Name,Password,Address,Phone,Email")] Customer customer)
         {
-            var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != 1)
+            var isAdmin = await _context.Admins.AnyAsync(a => a.AdminId == HttpContext.Session.GetInt32("AdminId"));
+            if (!isAdmin)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -234,6 +220,18 @@ namespace EWDProject.Controllers
                 HttpContext.Session.SetInt32("CustomerId", customer.CustomerId);
                 HttpContext.Session.SetString("CustomerName", customer.Name);
                 return RedirectToAction(nameof(Dashboard));
+            }
+
+            // Check if it's an admin login
+            var admin = await _context.Admins
+                .FirstOrDefaultAsync(a => a.Email == loginModel.Email &&
+                                        a.Password == loginModel.Password);
+
+            if (admin != null)
+            {
+                HttpContext.Session.SetInt32("AdminId", admin.AdminId);
+                HttpContext.Session.SetString("AdminName", admin.Name);
+                return RedirectToAction(nameof(CustomersList));
             }
 
             ModelState.AddModelError("", "Invalid email or password");
@@ -299,7 +297,9 @@ namespace EWDProject.Controllers
             }
 
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != id && customerId != 1)
+            var isAdmin = await _context.Admins.AnyAsync(a => a.AdminId == HttpContext.Session.GetInt32("AdminId"));
+
+            if (!isAdmin && customerId != id)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -324,7 +324,9 @@ namespace EWDProject.Controllers
             }
 
             var customerId = HttpContext.Session.GetInt32("CustomerId");
-            if (customerId != id && customerId != 1)
+            var isAdmin = await _context.Admins.AnyAsync(a => a.AdminId == HttpContext.Session.GetInt32("AdminId"));
+
+            if (!isAdmin && customerId != id)
             {
                 return RedirectToAction(nameof(Dashboard));
             }
@@ -352,7 +354,7 @@ namespace EWDProject.Controllers
                         HttpContext.Session.SetString("CustomerName", customer.Name);
                     }
 
-                    if (customerId == 1)
+                    if (isAdmin)
                     {
                         return RedirectToAction(nameof(CustomersList));
                     }
@@ -392,13 +394,6 @@ namespace EWDProject.Controllers
             if (customerId == null || customerId != id)
             {
                 return RedirectToAction(nameof(Login));
-            }
-
-            // Prevent deletion of admin account
-            if (id == 1)
-            {
-                TempData["ErrorMessage"] = "The admin account cannot be deleted.";
-                return RedirectToAction(nameof(Dashboard));
             }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())

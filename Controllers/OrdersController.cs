@@ -30,12 +30,10 @@ namespace EWDProject.Controllers
 
         private IActionResult RedirectToLogin()
         {
-            // If there's an admin ID in the session, redirect to admin login
             if (HttpContext.Session.GetInt32("AdminId") != null)
             {
                 return RedirectToAction("Login", "Admins");
             }
-            // Otherwise redirect to customer login
             return RedirectToAction("Login", "Customers");
         }
 
@@ -53,7 +51,6 @@ namespace EWDProject.Controllers
             return order.CustomerId == customerId && order.OrderStatus == "Saved";
         }
 
-        // GET: Orders/History
         public async Task<IActionResult> History()
         {
             if (!await IsAuthenticated())
@@ -77,7 +74,6 @@ namespace EWDProject.Controllers
             return View(orders);
         }
 
-        // GET: Orders/Details/5
         public async Task<IActionResult> Details(int? id)
         {
             if (!await IsAuthenticated())
@@ -101,7 +97,6 @@ namespace EWDProject.Controllers
                 return NotFound();
             }
 
-            // Check if user has permission to view this order
             var isAdmin = await IsAdmin();
             var customerId = HttpContext.Session.GetInt32("CustomerId");
 
@@ -113,7 +108,6 @@ namespace EWDProject.Controllers
             return View(order);
         }
 
-        // GET: Orders/Create
         public async Task<IActionResult> Create()
         {
             if (!await IsAuthenticated())
@@ -131,7 +125,6 @@ namespace EWDProject.Controllers
             return View();
         }
 
-        // POST: Orders/Create
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(List<OrderItemViewModel> orderItems, string action)
@@ -165,27 +158,26 @@ namespace EWDProject.Controllers
 
                         foreach (var item in orderItems.Where(i => i.Quantity > 0))
                         {
+                            var book = await _context.Books.FindAsync(item.BookId);
+                            if (book == null || (order.OrderStatus == "Confirmed" && book.Stock < item.Quantity))
+                            {
+                                throw new InvalidOperationException($"Insufficient stock for book: {book?.Title ?? "Unknown"}");
+                            }
+
                             var orderItem = new Orderitem
                             {
                                 OrderId = order.OrderId,
                                 BookId = item.BookId,
-                                Quantity = item.Quantity
+                                Quantity = item.Quantity,
+                                OrderItemId = await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) + 1 ?? 1
                             };
 
                             _context.Add(orderItem);
 
                             if (order.OrderStatus == "Confirmed")
                             {
-                                var book = await _context.Books.FindAsync(item.BookId);
-                                if (book != null)
-                                {
-                                    if (book.Stock < item.Quantity)
-                                    {
-                                        throw new InvalidOperationException($"Insufficient stock for book: {book.Title}");
-                                    }
-                                    book.Stock -= item.Quantity;
-                                    _context.Update(book);
-                                }
+                                book.Stock -= item.Quantity;
+                                _context.Update(book);
                             }
                         }
 
@@ -206,7 +198,6 @@ namespace EWDProject.Controllers
             return View();
         }
 
-        // GET: Orders/Edit/5
         public async Task<IActionResult> Edit(int? id)
         {
             if (!await IsAuthenticated())
@@ -237,7 +228,6 @@ namespace EWDProject.Controllers
             return View(order);
         }
 
-        // POST: Orders/Edit/5
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int id, List<OrderItemViewModel> orderItems)
@@ -268,24 +258,31 @@ namespace EWDProject.Controllers
                     try
                     {
                         // Remove existing order items
-                        _context.Orderitems.RemoveRange(order.Orderitems);
+                        var existingItems = await _context.Orderitems
+                            .Where(oi => oi.OrderId == id)
+                            .ToListAsync();
+                        _context.Orderitems.RemoveRange(existingItems);
+                        await _context.SaveChangesAsync();
 
                         // Add new order items
+                        var maxOrderItemId = await _context.Orderitems.MaxAsync(oi => (int?)oi.OrderItemId) ?? 0;
                         foreach (var item in orderItems.Where(i => i.Quantity > 0))
                         {
+                            maxOrderItemId++;
                             var orderItem = new Orderitem
                             {
+                                OrderItemId = maxOrderItemId,
                                 OrderId = order.OrderId,
                                 BookId = item.BookId,
                                 Quantity = item.Quantity
                             };
-
-                            _context.Add(orderItem);
+                            _context.Orderitems.Add(orderItem);
                         }
 
                         await _context.SaveChangesAsync();
                         await transaction.CommitAsync();
 
+                        TempData["SuccessMessage"] = "Order updated successfully.";
                         return RedirectToAction(nameof(Details), new { id = order.OrderId });
                     }
                     catch (Exception ex)
@@ -300,7 +297,6 @@ namespace EWDProject.Controllers
             return View(order);
         }
 
-        // GET: Orders/Delete/5
         public async Task<IActionResult> Delete(int? id)
         {
             if (!await IsAuthenticated())
@@ -332,7 +328,6 @@ namespace EWDProject.Controllers
             return View(order);
         }
 
-        // POST: Orders/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
@@ -363,7 +358,6 @@ namespace EWDProject.Controllers
                 {
                     if (order.OrderStatus == "Confirmed")
                     {
-                        // Restore book stock for confirmed orders
                         foreach (var item in order.Orderitems)
                         {
                             if (item.Book != null)
@@ -389,7 +383,6 @@ namespace EWDProject.Controllers
             }
         }
 
-        // POST: Orders/ConfirmOrder/5
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> ConfirmOrder(int id)

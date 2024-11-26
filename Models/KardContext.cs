@@ -15,6 +15,8 @@ public partial class KardContext : DbContext
     {
     }
 
+    public virtual DbSet<Admin> Admins { get; set; }
+
     public virtual DbSet<Book> Books { get; set; }
 
     public virtual DbSet<Customer> Customers { get; set; }
@@ -29,6 +31,29 @@ public partial class KardContext : DbContext
     }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Admin>(entity =>
+        {
+            entity.HasKey(e => e.AdminId).HasName("AdminPK");
+
+            entity.ToTable("ADMIN");
+
+            entity.Property(e => e.AdminId)
+                .ValueGeneratedNever()
+                .HasColumnName("AdminID");
+            entity.Property(e => e.Address)
+                .HasMaxLength(200)
+                .IsFixedLength();
+            entity.Property(e => e.Email)
+                .HasMaxLength(100)
+                .IsFixedLength();
+            entity.Property(e => e.Name)
+                .HasMaxLength(100)
+                .IsFixedLength();
+            entity.Property(e => e.Phone)
+                .HasMaxLength(15)
+                .IsFixedLength();
+        });
+
         modelBuilder.Entity<Book>(entity =>
         {
             entity.HasKey(e => e.BookId).HasName("BookPK");
@@ -56,7 +81,9 @@ public partial class KardContext : DbContext
 
             entity.ToTable("CUSTOMER");
 
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerID");
+            entity.Property(e => e.CustomerId)
+                .ValueGeneratedNever()
+                .HasColumnName("CustomerID");
             entity.Property(e => e.Address)
                 .HasMaxLength(200)
                 .IsFixedLength();

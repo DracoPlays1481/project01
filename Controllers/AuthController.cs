@@ -77,7 +77,11 @@ namespace ESD_PROJECT.Controllers
 
             var result = await _userManager.CreateAsync(user, model.Password);
             if (!result.Succeeded)
-                return StatusCode(StatusCodes.Status500InternalServerError, new { Status = "Error", Message = "User creation failed! Please check user details and try again." });
+            {
+                var errors = result.Errors.Select(e => e.Description);
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { Status = "Error", Message = "User creation failed!", Errors = errors });
+            }
 
             // By default, assign the Member role
             if (await _roleManager.RoleExistsAsync("Member"))
@@ -107,15 +111,19 @@ namespace ESD_PROJECT.Controllers
 
             var result = await _userManager.CreateAsync(user, model.Password);
             if (!result.Succeeded)
-                return StatusCode(StatusCodes.Status500InternalServerError, new { Status = "Error", Message = "User creation failed! Please check user details and try again." });
+            {
+                var errors = result.Errors.Select(e => e.Description);
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { Status = "Error", Message = "User creation failed!", Errors = errors });
+            }
 
-            // By default, assign the Member role
+            // Assign the Admin role
             if (await _roleManager.RoleExistsAsync("Admin"))
             {
                 await _userManager.AddToRoleAsync(user, "Admin");
             }
 
-            return Ok(new { Status = "Success", Message = "User created successfully!" });
+            return Ok(new { Status = "Success", Message = "Admin user created successfully!" });
         }
 
         [HttpPost]

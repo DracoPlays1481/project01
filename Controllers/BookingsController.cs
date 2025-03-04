@@ -20,14 +20,14 @@ namespace ESD_PROJECT.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Admin,Member")]
+        [Authorize(Roles = "Admin, Member")]
         public async Task<ActionResult<IEnumerable<Booking>>> GetAll()
         {
             return await _context.Bookings.ToListAsync();
         }
 
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Member")]
+        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<Booking>> GetById(int id)
         {
             var booking = await _context.Bookings.FindAsync(id);
@@ -39,7 +39,7 @@ namespace ESD_PROJECT.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin,Member")]
+        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<Booking>> Create(Booking booking)
         {
             // Set the BookedBy field to the current user if not provided
@@ -55,7 +55,7 @@ namespace ESD_PROJECT.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "Administrator,Member")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(int id, Booking booking)
         {
             if (id != booking.BookingID)
@@ -96,7 +96,7 @@ namespace ESD_PROJECT.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Administrator,Member")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
         {
             var booking = await _context.Bookings.FindAsync(id);

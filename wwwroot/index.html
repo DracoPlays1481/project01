@@ -1,0 +1,253 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking System</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Facility Booking System</h1>
+            <div id="user-info">
+                <span id="username">Not logged in</span>
+                <button id="logout-btn" class="btn btn-danger" style="display: none;">Logout</button>
+            </div>
+        </header>
+
+        <div id="auth-container">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="login">Login</button>
+                <button class="tab-btn" data-tab="register">Register</button>
+            </div>
+
+            <div id="login" class="tab-content active">
+                <h2>Login</h2>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="login-username">Username</label>
+                        <input type="text" id="login-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+            </div>
+
+            <div id="register" class="tab-content">
+                <h2>Register</h2>
+                <form id="register-form">
+                    <div class="form-group">
+                        <label for="register-username">Username</label>
+                        <input type="text" id="register-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">Email</label>
+                        <input type="email" id="register-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-firstname">First Name</label>
+                        <input type="text" id="register-firstname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-lastname">Last Name</label>
+                        <input type="text" id="register-lastname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Password</label>
+                        <input type="password" id="register-password" required>
+                        <small>Password must be at least 6 characters long with uppercase, lowercase, and numbers.</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Register</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Admin Panel (Only visible to Admin users) -->
+        <div id="admin-panel" style="display: none;">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="users-management">User Management</button>
+                <button class="tab-btn" data-tab="bookings-management">Booking Management</button>
+            </div>
+
+            <div id="users-management" class="tab-content active">
+                <div class="booking-header">
+                    <h2>Manage Users</h2>
+                    <button id="new-admin-btn" class="btn btn-warning">Register New Admin</button>
+                </div>
+
+                <div id="users-list">
+                    <table id="users-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Name</th>
+                                <th>Roles</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Users will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- User Edit Form Modal -->
+                <div id="user-form-container" class="modal">
+                    <div class="modal-content">
+                        <span class="close">&times;</span>
+                        <h2>Edit User</h2>
+                        <form id="user-form">
+                            <input type="hidden" id="user-id">
+                            <div class="form-group">
+                                <label for="user-email">Email</label>
+                                <input type="email" id="user-email" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="user-firstname">First Name</label>
+                                <input type="text" id="user-firstname" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="user-lastname">Last Name</label>
+                                <input type="text" id="user-lastname" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="user-role">Role</label>
+                                <select id="user-role" required>
+                                    <!-- Roles will be loaded here -->
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Save Changes</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Admin Registration Form Modal -->
+                <div id="admin-form-container" class="modal">
+                    <div class="modal-content">
+                        <span class="close">&times;</span>
+                        <h2>Register New Admin</h2>
+                        <form id="admin-form">
+                            <div class="form-group">
+                                <label for="admin-username">Username</label>
+                                <input type="text" id="admin-username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-email">Email</label>
+                                <input type="email" id="admin-email" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-firstname">First Name</label>
+                                <input type="text" id="admin-firstname" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-lastname">Last Name</label>
+                                <input type="text" id="admin-lastname" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-password">Password</label>
+                                <input type="password" id="admin-password" required>
+                                <small>Password must be at least 6 characters long with uppercase, lowercase, and numbers.</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Register Admin</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div id="bookings-management" class="tab-content">
+                <h2>All Bookings</h2>
+                <!-- This will show the same booking list but with admin capabilities -->
+                <div id="admin-booking-list">
+                    <table id="admin-bookings-table" class="bookings-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Facility</th>
+                                <th>From</th>
+                                <th>To</th>
+                                <th>Booked By</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Bookings will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="booking-container" style="display: none;">
+            <div class="booking-header">
+                <h2>Manage Bookings</h2>
+                <button id="new-booking-btn" class="btn btn-success">New Booking</button>
+            </div>
+
+            <div id="booking-list">
+                <div class="loading">Loading bookings...</div>
+                <table id="bookings-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Facility</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Booked By</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Bookings will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="booking-form-container" class="modal">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h2 id="form-title">New Booking</h2>
+                    <form id="booking-form">
+                        <input type="hidden" id="booking-id">
+                        <div class="form-group">
+                            <label for="facility">Facility Description</label>
+                            <input type="text" id="facility" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="date-from">From Date</label>
+                            <input type="datetime-local" id="date-from" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="date-to">To Date</label>
+                            <input type="datetime-local" id="date-to" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="status">Status</label>
+                            <select id="status" required>
+                                <option value="Pending">Pending</option>
+                                <option value="Confirmed">Confirmed</option>
+                                <option value="Cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Booking</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="js/app.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/bookings.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+https://go.microsoft.com/fwlink/?LinkID=208121.
+-->
+<Project>
+  <PropertyGroup>
+    <TimeStampOfAssociatedLegacyPublishXmlFile />
+    <History>True|2025-03-05T06:51:22.5387666Z||;True|2025-03-05T14:25:36.7700977+08:00||;True|2025-03-05T14:15:59.1957026+08:00||;True|2025-03-05T14:02:40.5409908+08:00||;True|2025-03-05T14:00:24.2775701+08:00||;</History>
+    <LastFailureDetails />
+  </PropertyGroup>
+  <ItemGroup>
+    <DestinationConnectionStrings Include="DbConn">
+      <Value>Server=DESKTOP-OQ16KL3\SQLEXPRESS%3bDatabase=Shawn_DB%3bTrusted_Connection=True%3bMultipleActiveResultSets=true%3bTrustServerCertificate=True</Value>
+    </DestinationConnectionStrings>
+  </ItemGroup>
+</Project>
